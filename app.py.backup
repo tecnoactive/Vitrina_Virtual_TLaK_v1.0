@@ -1,0 +1,346 @@
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+import RPi.GPIO as GPIO
+import sqlite3
+import os
+from datetime import datetime
+from functools import wraps
+import time
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)
+app.secret_key = 'clave_secreta_12345'
+
+# Configuración
+UPLOAD_FOLDER = 'static/videos'
+ALLOWED_EXTENSIONS = {'mp4', 'webm', 'mov'}
+SENSOR_PINS = [17, 27, 4, 5, 6, 13, 18, 22, 26, 19]
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Configuración GPIO
+def setup_gpio():
+    GPIO.setmode(GPIO.BCM)
+    for pin in SENSOR_PINS:
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+# Base de datos
+def init_db():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        # Tabla para videos de sensores
+        c.execute('''CREATE TABLE IF NOT EXISTS sensor_videos 
+                    (sensor_id INTEGER PRIMARY KEY,
+                     video_path TEXT,
+                     description TEXT)''')
+        
+        # Tabla para videos de fondo
+        c.execute('''CREATE TABLE IF NOT EXISTS background_videos 
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     video_path TEXT,
+                     orden INTEGER)''')
+        
+        # Tabla para registro de activaciones
+        c.execute('''CREATE TABLE IF NOT EXISTS activaciones 
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     sensor_id INTEGER,
+                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # Tabla para registro de versus
+        c.execute('''CREATE TABLE IF NOT EXISTS versus 
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     sensor1_id INTEGER,
+                     sensor2_id INTEGER,
+                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        conn.commit()
+
+# Decorator para requerir login
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Rutas principales
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/panel')
+def panel():
+    print("==== DEBUG PANEL ====")
+    print("Session status:", session)
+    if 'logged_in' not in session:
+        print("No logged in, redirecting to login")
+        return render_template('login.html')
+    try:
+        print("Attempting to render panel")
+        return render_template('panel.html')
+    except Exception as e:
+        print("Error rendering panel:", str(e))
+        return str(e), 500
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    return render_template('dashboard.html')
+
+@app.route('/login')
+def login_page():
+    return render_template('login.html')
+
+# API endpoints
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    print("==== DEBUG LOGIN ====")
+    print("Request Data:", data)
+    print("Session before:", session)
+    
+    if data and data.get('username') == 'admin' and data.get('password') == 'admin':
+        session['logged_in'] = True
+        print("Login successful")
+        print("Session after:", session)
+        return jsonify({'success': True, 'redirect': '/panel'})
+    else:
+        print("Login failed")
+        print("Username:", data.get('username'))
+        print("Password:", data.get('password'))
+        return jsonify({'error': 'Credenciales inválidas'}), 401
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.pop('logged_in', None)
+    return jsonify({'success': True})
+
+@app.route('/api/sensor_status')
+def sensor_status():
+    status = {pin: GPIO.input(pin) for pin in SENSOR_PINS}
+    active_sensors = [pin for pin, state in status.items() if state == 1]
+    return jsonify({'active_sensors': active_sensors})
+
+@app.route('/api/sensor_video/<int:sensor_id>')
+def get_sensor_video(sensor_id):
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT video_path FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
+        result = c.fetchone()
+        return jsonify({'video_path': result[0] if result else None})
+
+@app.route('/api/background_video')
+def get_background_video():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT video_path FROM background_videos ORDER BY orden LIMIT 1')
+        result = c.fetchone()
+        return jsonify({'video_path': result[0] if result else None})
+
+@app.route('/api/upload_video', methods=['POST'])
+@login_required
+def upload_video():
+    if 'video' not in request.files:
+        return jsonify({'error': 'No video file'}), 400
+    
+    file = request.files['video']
+    sensor_id = request.form.get('sensor_id')
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('INSERT OR REPLACE INTO sensor_videos (sensor_id, video_path) VALUES (?, ?)',
+                     (sensor_id, os.path.join('videos', filename)))
+            conn.commit()
+            
+        return jsonify({'success': True})
+
+@app.route('/api/stats')
+@login_required
+def get_stats():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        
+        # Estadísticas de productos
+        c.execute('''SELECT sensor_id, COUNT(*) as count, MAX(timestamp) as last_activation 
+                    FROM activaciones 
+                    GROUP BY sensor_id 
+                    ORDER BY count DESC''')
+        product_stats = [{'sensor_id': row[0], 
+                         'activations': row[1], 
+                         'last_activation': row[2]} 
+                        for row in c.fetchall()]
+        
+        # Estadísticas de versus
+        c.execute('''SELECT sensor1_id, sensor2_id, COUNT(*) as count, MAX(timestamp) as last_versus 
+                    FROM versus 
+                    GROUP BY sensor1_id, sensor2_id 
+                    ORDER BY count DESC''')
+        versus_stats = [{'sensor1_id': row[0],
+                        'sensor2_id': row[1],
+                        'count': row[2],
+                        'last_versus': row[3]}
+                       for row in c.fetchall()]
+        
+        # Estadísticas por hora
+        c.execute('''SELECT strftime('%H', timestamp) as hour, COUNT(*) 
+                    FROM activaciones 
+                    GROUP BY hour''')
+        hourly_stats = [0] * 24
+        for row in c.fetchall():
+            hourly_stats[int(row[0])] = row[1]
+        
+        # Estadísticas generales
+        general_stats = {
+            'total_activations': sum(stat['activations'] for stat in product_stats),
+            'total_versus': sum(stat['count'] for stat in versus_stats),
+            'most_popular_sensor': product_stats[0]['sensor_id'] if product_stats else None,
+            'most_common_versus': f"{versus_stats[0]['sensor1_id']} vs {versus_stats[0]['sensor2_id']}" if versus_stats else None
+        }
+        
+        return jsonify({
+            'product_stats': product_stats,
+            'versus_stats': versus_stats,
+            'hourly_stats': hourly_stats,
+            'general_stats': general_stats
+        })
+
+@app.route('/api/sensor_videos')
+@login_required
+def get_all_sensor_videos():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT sensor_id, video_path FROM sensor_videos')
+        videos = [{'sensor_id': row[0], 'video_path': row[1]} for row in c.fetchall()]
+        return jsonify(videos)
+
+@app.route('/api/remove_video/<int:sensor_id>', methods=['DELETE'])
+@login_required
+def remove_sensor_video(sensor_id):
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT video_path FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
+        result = c.fetchone()
+        if result:
+            video_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(result[0]))
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            c.execute('DELETE FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
+            conn.commit()
+            return jsonify({'success': True})
+        return jsonify({'error': 'Video no encontrado'}), 404
+
+@app.route('/api/background_videos')
+def get_background_videos():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT id, video_path, orden FROM background_videos ORDER BY orden')
+        videos = [{'id': row[0], 'video_path': row[1], 'orden': row[2]} 
+                 for row in c.fetchall()]
+        return jsonify(videos)
+
+@app.route('/api/upload_background', methods=['POST'])
+@login_required
+def upload_background_video():
+    if 'video' not in request.files:
+        return jsonify({'error': 'No video file'}), 400
+    
+    file = request.files['video']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('SELECT MAX(orden) FROM background_videos')
+            max_orden = c.fetchone()[0] or 0
+            c.execute('INSERT INTO background_videos (video_path, orden) VALUES (?, ?)',
+                     (os.path.join('videos', filename), max_orden + 1))
+            conn.commit()
+            
+        return jsonify({'success': True})
+
+@app.route('/api/reorder_background', methods=['POST'])
+@login_required
+def reorder_background():
+    data = request.json
+    video_id = data.get('video_id')
+    direction = data.get('direction')
+    
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT orden FROM background_videos WHERE id = ?', (video_id,))
+        current_order = c.fetchone()[0]
+        
+        if direction == 'up' and current_order > 1:
+            c.execute('''
+                UPDATE background_videos 
+                SET orden = CASE
+                    WHEN orden = ? THEN ? 
+                    WHEN orden = ? - 1 THEN ?
+                END
+                WHERE orden IN (?, ? - 1)
+            ''', (current_order, current_order - 1, current_order, current_order, current_order, current_order))
+        elif direction == 'down':
+            c.execute('''
+                UPDATE background_videos 
+                SET orden = CASE
+                    WHEN orden = ? THEN ? 
+                    WHEN orden = ? + 1 THEN ?
+                END
+                WHERE orden IN (?, ? + 1)
+            ''', (current_order, current_order + 1, current_order, current_order, current_order, current_order))
+            
+        conn.commit()
+        return jsonify({'success': True})
+
+@app.route('/api/remove_background/<int:video_id>', methods=['DELETE'])
+@login_required
+def remove_background_video(video_id):
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT video_path FROM background_videos WHERE id = ?', (video_id,))
+        result = c.fetchone()
+        if result:
+            video_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(result[0]))
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            c.execute('DELETE FROM background_videos WHERE id = ?', (video_id,))
+            c.execute('''
+                UPDATE background_videos 
+                SET orden = (
+                    SELECT COUNT(*) 
+                    FROM background_videos b2 
+                    WHERE b2.orden <= background_videos.orden 
+                    AND b2.id != ?
+                )
+                WHERE id != ?
+            ''', (video_id, video_id))
+            conn.commit()
+            return jsonify({'success': True})
+        return jsonify({'error': 'Video no encontrado'}), 404
+
+@app.route('/api/next_background_video')
+def get_next_background_video():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT video_path FROM background_videos ORDER BY orden')
+        videos = [row[0] for row in c.fetchall()]
+        return jsonify({'videos': videos})
+
+if __name__ == '__main__':
+    setup_gpio()
+    init_db()
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER)
+    app.run(host='0.0.0.0', port=5000, debug=True)
