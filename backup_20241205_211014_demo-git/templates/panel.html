@@ -82,31 +82,9 @@
     </div>
 
     <!-- Modal de Preview -->
-    <div id="preview-modal" class="preview-modal">
-        <div class="preview-content">
-            <div class="preview-header">
-                <h3>Vista Previa</h3>
-                <button onclick="closePreview()" class="close-button">×</button>
-            </div>
-            <video id="preview-video" controls></video>
-        </div>
-    </div>
 
-    <!-- Vista Previa en Vivo -->
-    <div id="live-preview-container" class="live-preview-container">
-        <div class="preview-header">
-            <h3>Vista Previa en Vivo</h3>
-            <button onclick="togglePreview()" class="close-button">×</button>
-        </div>
-        <iframe id="live-preview" src="/" 
-                style="width: 320px; height: 240px; transform: scale(0.75); transform-origin: 0 0; border: 1px solid #ccc;">
-        </iframe>
-    </div>
 
-    <!-- Preview Toggle -->
-    <button onclick="togglePreview()" class="preview-toggle button">
-        Mostrar Vista Previa
-    </button>
+
 
     <!-- Scripts -->
     <script src="/static/js/panel.js"></script>
