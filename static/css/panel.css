@@ -1,0 +1,263 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f5f5f5;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.nav-menu {
+    background: #333;
+    padding: 15px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.nav-menu a {
+    color: white;
+    text-decoration: none;
+    margin-right: 20px;
+    padding: 8px 15px;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+.nav-menu a:hover {
+    background: #444;
+}
+
+.card {
+    background: white;
+    padding: 25px;
+    margin-bottom: 25px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 25px;
+    margin-top: 20px;
+}
+
+.sensor-card {
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.sensor-info {
+    margin-top: 15px;
+}
+
+.sensor-label-input {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.video-section {
+    margin-top: 15px;
+}
+
+.button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.1s;
+    font-weight: 500;
+}
+
+.button:hover {
+    background: #0056b3;
+    transform: translateY(-1px);
+}
+
+.button:active {
+    transform: translateY(1px);
+}
+
+.button.delete {
+    background: #dc3545;
+}
+
+.button.delete:hover {
+    background: #c82333;
+}
+
+.button.preview {
+    background: #28a745;
+    margin: 0 10px;
+}
+
+.button.preview:hover {
+    background: #218838;
+}
+
+.loading {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(3px);
+}
+
+.loading-content {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Modal de Preview */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    position: relative;
+    width: 90%;
+    max-width: 1200px;
+    background: #000;
+    padding: 20px;
+    border-radius: 12px;
+}
+
+.modal-content video {
+    width: 100%;
+    max-height: 80vh;
+    border-radius: 8px;
+}
+
+.close {
+    position: absolute;
+    top: -40px;
+    right: -40px;
+    color: white;
+    font-size: 36px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 10px;
+}
+
+/* Live Preview */
+.live-preview-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 900;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px 8px 0 0;
+}
+
+.preview-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 800;
+}
+
+/* Control de sistema */
+.system-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 25px;
+}
+
+.control-group {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+.control-group h3 {
+    margin-top: 0;
+    color: #333;
+}
+
+/* Playlist de fondo */
+.playlist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    margin-bottom: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+.playlist-info {
+    flex: 1;
+}
+
+.playlist-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.input-group {
+    margin-bottom: 25px;
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+select, input[type="file"] {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+}
+
+select {
+    cursor: pointer;
+}

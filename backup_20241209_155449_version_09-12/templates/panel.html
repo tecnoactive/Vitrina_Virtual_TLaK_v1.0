@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control - Vitrina Digital</title>
+    <link rel="stylesheet" href="/static/css/panel.css">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading" class="loading" style="display: none;">
+        <div class="loading-content">
+            <h3>Procesando...</h3>
+            <p>Por favor espere</p>
+        </div>
+    </div>
+
+    <!-- Barra de Navegación -->
+    <nav class="nav-menu">
+        <div>
+            <a href="/dashboard">Dashboard</a>
+            <a href="#sensors">Sensores</a>
+            <a href="#background">Videos de Fondo</a>
+        </div>
+        <button onclick="handleLogout()" class="button">Cerrar Sesión</button>
+    </nav>
+
+    <!-- Contenido Principal -->
+    <div class="container">
+        <!-- Configuración del Sistema -->
+        <div class="card">
+            <h2>Configuración del Sistema</h2>
+            <div class="system-controls">
+                <!-- Control Debug -->
+                <div class="control-group">
+                    <h3>Debug Panel</h3>
+                    <button onclick="toggleDebugPanel()" class="button">
+                        <span id="debug-status">Activar</span> Debug Panel
+                    </button>
+                    <p id="current-mode"></p>
+                </div>
+                
+                <!-- Control Versus -->
+                <div class="control-group">
+                    <h3>Modo Versus</h3>
+                    <select id="versus-mode" onchange="updateVersusMode()">
+                        <option value="2">2 Sensores</option>
+                        <option value="3">3 Sensores con Extra</option>
+                        <option value="4">4 Sensores</option>
+                    </select>
+                </div>
+
+                <!-- Configuración Contenido Extra -->
+                <div id="extra-content-section" class="control-group" style="display: none;">
+                    <h3>Contenido Extra</h3>
+                    <select id="extra-position">
+                        <option value="top-right">Superior Derecha</option>
+                        <option value="top-left">Superior Izquierda</option>
+                        <option value="bottom-right">Inferior Derecha</option>
+                        <option value="bottom-left">Inferior Izquierda</option>
+                    </select>
+                    <input type="file" id="extra-content" accept="image/*,video/*">
+                    <button onclick="updateExtraContent()" class="button">Subir Contenido</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gestión de Sensores -->
+        <div class="card" id="sensors">
+            <h2>Gestión de Sensores</h2>
+            <div id="sensor-list" class="sensor-grid"></div>
+        </div>
+
+        <!-- Videos de Fondo -->
+        <div class="card" id="background">
+            <h2>Videos de Fondo</h2>
+            <div class="input-group">
+                <input type="file" id="background-video-upload" accept="video/*">
+                <button onclick="uploadBackgroundVideo()" class="button">Subir Video</button>
+            </div>
+            <div id="background-video-list"></div>
+        </div>
+    </div>
+
+    <!-- Modal de Preview -->
+
+
+    <!-- Vista Previa en Vivo -->
+    <div id="live-preview-container" class="live-preview-container">
+        <div class="preview-header">
+            <h3>Vista Previa en Vivo</h3>
+            <button onclick="togglePreview()" class="close-button">×</button>
+        </div>
+        <iframe id="live-preview" src="/" 
+                style="width: 320px; height: 240px; transform: scale(0.75); transform-origin: 0 0; border: 1px solid #ccc;">
+        </iframe>
+    </div>
+
+    <!-- Preview Toggle -->
+    <button onclick="togglePreview()" class="preview-toggle button">
+        Mostrar Vista Previa
+    </button>
+
+    <!-- Scripts -->
+    <script src="/static/js/panel.js"></script>
+</body>
+</html>
