@@ -123,67 +123,102 @@ async function loadSensorList() {
 
     showLoading('Cargando sensores...');
     try {
-        const response = await fetch('/api/sensor_videos');
-        const currentVideos = await response.json();
-        const videoMap = new Map(currentVideos.map(v => [v.sensor_id, v]));
+        // Obtener lista actual de etiquetas
+        const etiquetasResponse = await fetch('/api/etiquetas-sensores');
+        const etiquetas = await etiquetasResponse.json();
+        console.log('Etiquetas cargadas:', etiquetas); // Debug
 
+        // Obtener videos actuales
+        const videosResponse = await fetch('/api/sensor_videos');
+        const videos = await videosResponse.json();
+        const videoMap = new Map(videos.map(v => [v.sensor_id, v]));
+
+        // Limpiar y reconstruir la lista
         sensorList.innerHTML = '';
         SENSOR_PINS.forEach(sensorId => {
             const videoInfo = videoMap.get(sensorId);
-            const card = createSensorCard(sensorId, videoInfo);
+            const etiqueta = etiquetas[sensorId];
+            const card = createSensorCard(sensorId, videoInfo, etiqueta);
             sensorList.appendChild(card);
         });
     } catch (error) {
-        console.error('Error:', error);
-        showError('Error cargando sensores');
+        console.error('Error cargando lista de sensores:', error);
+        showError('Error al cargar la lista de sensores');
     } finally {
         hideLoading();
     }
 }
 
-function createSensorCard(sensorId, videoInfo) {
+
+async function actualizarEtiquetaSensor(pin, nombre) {
+    console.log('Actualizando sensor:', pin, 'con nombre:', nombre); // Debug
+    try {
+        showLoading('Actualizando nombre del sensor...');
+        const respuesta = await fetch('/api/actualizar-etiqueta', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                pin: parseInt(pin), // Aseguramos que el pin sea número
+                nombre: nombre.trim() // Removemos espacios extras
+            })
+        });
+        
+        if (!respuesta.ok) {
+            throw new Error('Error en la respuesta del servidor');
+        }
+        
+        const data = await respuesta.json();
+        if (data.success) {
+            showSuccess('Nombre del sensor actualizado');
+            await loadSensorList(); // Recargamos la lista completa
+        } else {
+            throw new Error(data.error || 'Error al actualizar etiqueta');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showError('Error al actualizar nombre del sensor: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function createSensorCard(sensorId, videoInfo, etiqueta) {
     const card = document.createElement('div');
     card.className = 'sensor-card';
     
+    const nombreActual = etiqueta || `Sensor ${sensorId}`;
+    console.log('Creando card para sensor:', sensorId, 'nombre:', nombreActual); // Debug
+    
     card.innerHTML = `
-        <h3>Sensor ${sensorId}</h3>
+        <h3>${nombreActual}</h3>
         <div class="sensor-info">
             <input type="text" 
-                   id="sensor-name-${sensorId}" 
-                   placeholder="Nombre del sensor"
-                   placeholder="Nombre del producto"
-                   value="${videoInfo?.product_name || ''}"
-                   onchange="updateSensorName(${sensorId}, this.value)">
-        </div>
-        <div>
-            <p>Video actual: ${videoInfo ? videoInfo.video_path.split('/').pop() : 'Sin video'}</p>
-            <p>Nombre: ${videoInfo?.product_name || 'Sin nombre'}</p>
-            <input type="file" id="video-${sensorId}" accept="video/*">
-            <button class="button" onclick="assignVideo(${sensorId})">
-                ${videoInfo ? 'Cambiar Video' : 'Asignar Video'}
-            </button>
-            ${videoInfo ? `
-                <button class="button preview" onclick="showPreview('/static/${videoInfo.video_path}')">
-                    Ver Preview
+                   class="sensor-label-input"
+                   value="${nombreActual}"
+                   data-sensor-id="${sensorId}"
+                   onchange="actualizarEtiquetaSensor(${sensorId}, this.value)">
+            <div class="video-section">
+                <p>Video actual: ${videoInfo ? videoInfo.video_path.split('/').pop() : 'Sin video'}</p>
+                <input type="file" id="video-${sensorId}" accept="video/*">
+                <button class="button" onclick="assignVideo(${sensorId})">
+                    ${videoInfo ? 'Cambiar Video' : 'Asignar Video'}
                 </button>
-                <button class="button delete" onclick="removeVideo(${sensorId})">
-                    Eliminar
-                </button>
-            ` : ''}
-            ${videoInfo ? `
-                <div class="audio-control">
-                    <label>
-                        <input type="checkbox" 
-                               onchange="toggleMute(${sensorId}, this.checked)"
-                               ${localStorage.getItem(`sensor_${sensorId}_muted`) === 'true' ? 'checked' : ''}>
-                        Silenciar
-                    </label>
-                </div>
-            ` : ''}
+                ${videoInfo ? `
+                    <button class="button preview" onclick="showPreview('/static/${videoInfo.video_path}')">
+                        Ver Preview
+                    </button>
+                    <button class="button delete" onclick="removeVideo(${sensorId})">
+                        Eliminar
+                    </button>
+                ` : ''}
+            </div>
         </div>
     `;
     return card;
 }
+
 
 function showExtraContentInfo() {
     const extraContentSection = document.getElementById('extra-content-section');

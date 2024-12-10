@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
-import RPi.GPIO as GPIO
+import gpiod
 import sqlite3
 import os
 from datetime import datetime
@@ -15,16 +15,33 @@ app.secret_key = 'admin'
 UPLOAD_FOLDER = 'static/videos'
 ALLOWED_EXTENSIONS = {'mp4', 'webm', 'mov'}
 SENSOR_PINS = [17, 27, 4, 5, 6, 13, 18, 22, 26, 19]
+CHIP_NAME = 'gpiochip4'  # Específico para Raspberry Pi 5
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Variables globales
 previous_active_sensors = []
+GPIO_AVAILABLE = True
+chip = None
+lines = {}
 
 def setup_gpio():
-    GPIO.setmode(GPIO.BCM)
-    for pin in SENSOR_PINS:
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    global chip, lines, GPIO_AVAILABLE
+    try:
+        chip = gpiod.Chip(CHIP_NAME)
+        for pin in SENSOR_PINS:
+            try:
+                line = chip.get_line(pin)
+                line.request(consumer="vitrina", type=gpiod.LINE_REQ_DIR_IN)
+                lines[pin] = line
+            except Exception as e:
+                print(f"Error configurando pin {pin}: {e}")
+        print("GPIO configurado correctamente")
+    except Exception as e:
+        print(f"Error accediendo al GPIO: {e}")
+        GPIO_AVAILABLE = False
+        print("Ejecutando en modo simulado (sin GPIO)")
+
 
 
 def init_db():
@@ -130,18 +147,14 @@ def logout():
     return jsonify({'success': True})
 
 
-@app.route('/api/sensor_status/<int:sensor_id>')
-def get_sensor_status(sensor_id):
-    try:
-        status = GPIO.input(sensor_id)
-        return jsonify({'status': status})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/sensor_status')
 def sensor_status():
     try:
-        status = {pin: GPIO.input(pin) for pin in SENSOR_PINS}
+        if GPIO_AVAILABLE:
+            status = {pin: lines[pin].get_value() if pin in lines else 0 for pin in SENSOR_PINS}
+        else:
+            status = {pin: 0 for pin in SENSOR_PINS}
+        
         active_sensors = [pin for pin, state in status.items() if state == 1]
         
         global previous_active_sensors
@@ -159,6 +172,17 @@ def sensor_status():
             'error': 'Error al leer sensores',
             'active_sensors': []
         }), 500
+
+@app.route('/api/sensor_status/<int:sensor_id>')
+def get_sensor_status(sensor_id):
+    try:
+        if GPIO_AVAILABLE and sensor_id in lines:
+            status = lines[sensor_id].get_value()
+        else:
+            status = 0
+        return jsonify({'status': status})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/etiquetas-sensores', methods=['GET'])
 def obtener_etiquetas_sensores():
@@ -184,6 +208,109 @@ def actualizar_etiqueta_sensor():
                  (nombre, pin))
         conn.commit()
     return jsonify({'success': True})
+
+
+@app.route('/api/upload_background', methods=['POST'])
+@login_required
+def upload_background_video():
+    if 'video' not in request.files:
+        return jsonify({'error': 'No se encontró archivo de video'}), 400
+    
+    file = request.files['video']
+    if file.filename == '':
+        return jsonify({'error': 'No se seleccionó ningún archivo'}), 400
+
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener el máximo orden actual
+            c.execute('SELECT MAX(orden) FROM background_videos')
+            max_orden = c.fetchone()[0] or 0
+            
+            # Insertar el nuevo video
+            c.execute('INSERT INTO background_videos (video_path, orden) VALUES (?, ?)',
+                     (os.path.join('videos', filename), max_orden + 1))
+            conn.commit()
+            
+        return jsonify({'success': True})
+    
+    return jsonify({'error': 'Error al procesar el archivo'}), 400
+
+@app.route('/api/toggle-debug', methods=['POST'])
+@login_required
+def toggle_debug():
+    try:
+        data = request.json
+        enabled = data.get('enabled', False)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('UPDATE system_config SET value = ? WHERE key = ?', 
+                     (str(enabled).lower(), 'debug_enabled'))
+            conn.commit()
+        
+        return jsonify({'success': True, 'debug_enabled': enabled})
+    except Exception as e:
+        print(f"Error en toggle_debug: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/system-config')
+def get_system_config():
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('SELECT key, value FROM system_config')
+            config = dict(c.fetchall())
+            return jsonify(config)
+    except Exception as e:
+        print(f"Error en system_config: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/remove_background/<int:video_id>', methods=['DELETE'])
+@login_required
+def remove_background_video(video_id):
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener la ruta del video
+            c.execute('SELECT video_path FROM background_videos WHERE id = ?', (video_id,))
+            result = c.fetchone()
+            
+            if result:
+                video_path = os.path.join(app.config['UPLOAD_FOLDER'], 
+                                        os.path.basename(result[0]))
+                # Eliminar archivo si existe
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    
+                # Eliminar registro de la base de datos
+                c.execute('DELETE FROM background_videos WHERE id = ?', (video_id,))
+                
+                # Reordenar videos restantes
+                c.execute('''
+                    UPDATE background_videos 
+                    SET orden = (
+                        SELECT COUNT(*) 
+                        FROM background_videos b2 
+                        WHERE b2.orden <= background_videos.orden 
+                        AND b2.id != ?
+                    )
+                    WHERE id != ?
+                ''', (video_id, video_id))
+                
+                conn.commit()
+                return jsonify({'success': True})
+                
+        return jsonify({'error': 'Video no encontrado'}), 404
+        
+    except Exception as e:
+        print(f"Error al eliminar video de fondo: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
 
 
 @app.route('/api/sensor_video/<int:sensor_id>')
@@ -270,18 +397,6 @@ def get_current_mode():
         c.execute('SELECT value FROM system_config WHERE key = ?', ('versus_mode',))
         result = c.fetchone()
         return jsonify({'mode': int(result[0]) if result else 1})
-
-@app.route('/api/system-config')
-def get_system_config():
-    try:
-        with sqlite3.connect('vitrina.db') as conn:
-            c = conn.cursor()
-            c.execute('SELECT key, value FROM system_config')
-            config = dict(c.fetchall())
-            return jsonify(config)
-    except Exception as e:
-        app.logger.error(f"Error en system_config: {str(e)}")
-        return jsonify({'error': 'Error al obtener configuración'}), 500
 
 def register_sensor_activity(active_sensors, previous_sensors):
     with sqlite3.connect('vitrina.db') as conn:
