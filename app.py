@@ -1,53 +1,30 @@
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
-import gpiod
 import sqlite3
 import os
+import json
 from datetime import datetime
-from functools import wraps
-import time
-from werkzeug.utils import secure_filename
 import functools
+from functools import wraps
+from werkzeug.utils import secure_filename
+
+from sensor_manager import SensorManager  # Solo importamos SensorManager
 
 app = Flask(__name__)
 app.secret_key = 'admin'
 
-# Configuración
 UPLOAD_FOLDER = 'static/videos'
 ALLOWED_EXTENSIONS = {'mp4', 'webm', 'mov'}
-SENSOR_PINS = [17, 27, 4, 5, 6, 13, 18, 22, 26, 19]
-CHIP_NAME = 'gpiochip4'  # Específico para Raspberry Pi 5
+SENSOR_PINS = [17, 27, 5, 6, 13, 18, 22, 26, 19]
+DEFAULT_SENSORS = [17, 27, 5, 6, 13, 18]
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# Variables globales
 previous_active_sensors = []
-GPIO_AVAILABLE = True
-chip = None
-lines = {}
-
-def setup_gpio():
-    global chip, lines, GPIO_AVAILABLE
-    try:
-        chip = gpiod.Chip(CHIP_NAME)
-        for pin in SENSOR_PINS:
-            try:
-                line = chip.get_line(pin)
-                line.request(consumer="vitrina", type=gpiod.LINE_REQ_DIR_IN)
-                lines[pin] = line
-            except Exception as e:
-                print(f"Error configurando pin {pin}: {e}")
-        print("GPIO configurado correctamente")
-    except Exception as e:
-        print(f"Error accediendo al GPIO: {e}")
-        GPIO_AVAILABLE = False
-        print("Ejecutando en modo simulado (sin GPIO)")
-
 
 
 def init_db():
     with sqlite3.connect('vitrina.db') as conn:
         c = conn.cursor()
-        # Tablas necesarias
+        
         c.execute('''CREATE TABLE IF NOT EXISTS sensor_videos 
                     (sensor_id INTEGER PRIMARY KEY,
                      video_path TEXT,
@@ -71,38 +48,101 @@ def init_db():
         
         c.execute('''CREATE TABLE IF NOT EXISTS etiquetas_sensores
                     (pin INTEGER PRIMARY KEY,
-                     nombre TEXT NOT NULL)''')
+                     nombre TEXT NOT NULL,
+                     enabled INTEGER DEFAULT 0)''')
 
         c.execute('''CREATE TABLE IF NOT EXISTS system_config
                     (key TEXT PRIMARY KEY,
                      value TEXT)''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS extra_content
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS extra_content 
                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                     content_path TEXT,
-                     position TEXT,
-                     content_type TEXT)''')
+                    content_path TEXT,
+                    position TEXT,
+                    content_type TEXT)''')
+
+        # Insertar nombres y estados predeterminados de sensores
+        for pin in SENSOR_PINS:
+            enabled = 1 if pin in DEFAULT_SENSORS else 0
+            sensor_num = SENSOR_PINS.index(pin) + 1
+            c.execute('''INSERT OR REPLACE INTO etiquetas_sensores (pin, nombre, enabled) 
+                        VALUES (?, ?, ?)''', (pin, f'Sensor {sensor_num}', enabled))
 
         # Configuración inicial
         c.execute('''INSERT OR REPLACE INTO system_config (key, value) 
-                 VALUES 
-                 ('versus_mode', '1'),
-                 ('debug_enabled', 'false')''')
-        
-        # Insertar nombres predeterminados de sensores
-        c.execute('''INSERT OR IGNORE INTO etiquetas_sensores (pin, nombre) VALUES 
-            (17, 'Sensor 1'), 
-            (27, 'Sensor 2'), 
-            (4, 'Sensor 3'),
-            (5, 'Sensor 4'), 
-            (6, 'Sensor 5'), 
-            (13, 'Sensor 6'),
-            (18, 'Sensor 7'), 
-            (22, 'Sensor 8'), 
-            (26, 'Sensor 9'),
-            (19, 'Sensor 10')''')
+                    VALUES ('versus_mode', '1'),
+                    ('debug_enabled', 'false')''')
         
         conn.commit()
+
+
+@app.route('/api/sensor_status')
+def sensor_status():
+    try:
+        global previous_active_sensors
+        with open('sensor_data.json', 'r') as f:
+            data = json.load(f)
+        
+        # Procesar activaciones
+        if set(data['active_sensors']) != set(previous_active_sensors):
+            register_sensor_activity(data['active_sensors'], previous_active_sensors)
+            previous_active_sensors = data['active_sensors'].copy()
+        
+        return jsonify(data)
+    except Exception as e:
+        print(f"Error leyendo sensor_data.json: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'active_sensors': [],
+            'status': {}
+        }), 500
+
+        
+@app.route('/api/dashboard-stats')
+def get_dashboard_stats():
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            
+            # Total activaciones
+            c.execute('SELECT COUNT(*) FROM activaciones')
+            total_activaciones = c.fetchone()[0]
+            
+            # Total versus
+            c.execute('SELECT COUNT(*) FROM versus')
+            total_versus = c.fetchone()[0]
+            
+            # Sensor más popular
+            c.execute('''
+                SELECT sensor_id, COUNT(*) as count 
+                FROM activaciones 
+                GROUP BY sensor_id 
+                ORDER BY count DESC 
+                LIMIT 1
+            ''')
+            most_popular = c.fetchone()
+            
+            return jsonify({
+                'total_activations': total_activaciones,
+                'total_versus': total_versus,
+                'most_popular_sensor': most_popular[0] if most_popular else None,
+                'hourly_stats': [0] * 24  # Placeholder para estadísticas por hora
+            })
+    except Exception as e:
+        print(f"Error en dashboard stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sensor-names')
+def get_sensor_names():
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('SELECT pin, nombre FROM etiquetas_sensores')
+            nombres = dict(c.fetchall())
+            return jsonify(nombres)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500  
 
 
 def login_required(f):
@@ -146,43 +186,6 @@ def logout():
     session.pop('logged_in', None)
     return jsonify({'success': True})
 
-
-@app.route('/api/sensor_status')
-def sensor_status():
-    try:
-        if GPIO_AVAILABLE:
-            status = {pin: lines[pin].get_value() if pin in lines else 0 for pin in SENSOR_PINS}
-        else:
-            status = {pin: 0 for pin in SENSOR_PINS}
-        
-        active_sensors = [pin for pin, state in status.items() if state == 1]
-        
-        global previous_active_sensors
-        if active_sensors != previous_active_sensors:
-            register_sensor_activity(active_sensors, previous_active_sensors)
-            previous_active_sensors = active_sensors
-        
-        return jsonify({
-            'active_sensors': active_sensors,
-            'status': status
-        })
-    except Exception as e:
-        app.logger.error(f"Error en sensor_status: {str(e)}")
-        return jsonify({
-            'error': 'Error al leer sensores',
-            'active_sensors': []
-        }), 500
-
-@app.route('/api/sensor_status/<int:sensor_id>')
-def get_sensor_status(sensor_id):
-    try:
-        if GPIO_AVAILABLE and sensor_id in lines:
-            status = lines[sensor_id].get_value()
-        else:
-            status = 0
-        return jsonify({'status': status})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/etiquetas-sensores', methods=['GET'])
 def obtener_etiquetas_sensores():
@@ -414,62 +417,137 @@ def register_sensor_activity(active_sensors, previous_sensors):
 
 @app.route('/api/stats')
 def get_stats():
-    date_from = request.args.get('from', '1900-01-01') 
-    date_to = request.args.get('to', '2100-12-31')
+    try:
+        period = request.args.get('period', 'month')
+        date_from = request.args.get('from')
+        date_to = request.args.get('to')
 
-    with sqlite3.connect('vitrina.db') as conn:
-        c = conn.cursor()
-        
-        # Estadísticas por producto
-        c.execute('''
-            SELECT a.sensor_id, COUNT(*) as activaciones, MAX(a.timestamp) as last_activation,
-                   es.nombre as nombre_sensor
-            FROM activaciones a
-            LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.pin
-            WHERE a.timestamp BETWEEN ? AND ?
-            GROUP BY a.sensor_id
-            ORDER BY activaciones DESC
-        ''', (date_from, date_to))
-        product_stats = [
-            {
-                'sensor_id': row[0], 
-                'activaciones': row[1], 
-                'ultima_activacion': row[2],
-                'nombre_sensor': row[3]
-            }
-            for row in c.fetchall()
-        ]
-        
-        # Estadísticas de versus
-        c.execute('''
-            SELECT v.sensor1_id, v.sensor2_id, COUNT(*) as count, 
-                   MAX(v.timestamp) as last_versus,
-                   es1.nombre as nombre_sensor1,
-                   es2.nombre as nombre_sensor2  
-            FROM versus v
-            LEFT JOIN etiquetas_sensores es1 ON v.sensor1_id = es1.pin
-            LEFT JOIN etiquetas_sensores es2 ON v.sensor2_id = es2.pin
-            WHERE v.timestamp BETWEEN ? AND ?
-            GROUP BY v.sensor1_id, v.sensor2_id
-            ORDER BY count DESC
-        ''', (date_from, date_to))
-        versus_stats = [
-            {
-                'sensor1_id': row[0], 
-                'sensor2_id': row[1], 
-                'count': row[2], 
-                'ultimo_versus': row[3],
-                'nombre_sensor1': row[4],
-                'nombre_sensor2': row[5]
-            }
-            for row in c.fetchall()
-        ]
-        
-        return jsonify({
-            'product_stats': product_stats,
-            'versus_stats': versus_stats
-        })
+        # Construir query base
+        date_filter = ''
+        if period == 'today':
+            date_filter = 'WHERE DATE(timestamp) = DATE("now")'
+        elif period == 'week':
+            date_filter = 'WHERE timestamp >= datetime("now", "-7 days")'
+        elif period == 'month':
+            date_filter = 'WHERE timestamp >= datetime("now", "-1 month")'
+        elif date_from and date_to:
+            date_filter = f'WHERE DATE(timestamp) BETWEEN "{date_from}" AND "{date_to}"'
+
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            
+            # Estadísticas generales
+            c.execute(f'SELECT COUNT(*) FROM activaciones {date_filter}')
+            total_activations = c.fetchone()[0]
+            
+            c.execute(f'SELECT COUNT(*) FROM versus {date_filter}')
+            total_versus = c.fetchone()[0]
+            
+            # Producto más popular
+            c.execute(f'''
+                SELECT a.sensor_id, es.nombre, COUNT(*) as count 
+                FROM activaciones a
+                JOIN etiquetas_sensores es ON a.sensor_id = es.pin
+                {date_filter}
+                GROUP BY a.sensor_id 
+                ORDER BY count DESC 
+                LIMIT 1
+            ''')
+            most_popular = c.fetchone()
+            
+            # Estadísticas por producto
+            c.execute(f'''
+                SELECT a.sensor_id, es.nombre, COUNT(*) as count 
+                FROM activaciones a
+                JOIN etiquetas_sensores es ON a.sensor_id = es.pin
+                {date_filter}
+                GROUP BY a.sensor_id
+            ''')
+            product_stats = [{
+                'sensor_id': row[0],
+                'name': row[1],
+                'activations': row[2]
+            } for row in c.fetchall()]
+            
+            # Actividad por hora
+            c.execute(f'''
+                SELECT strftime('%H', timestamp) as hour, COUNT(*) 
+                FROM activaciones 
+                {date_filter}
+                GROUP BY hour
+            ''')
+            hourly_data = dict(c.fetchall())
+            hourly_stats = [int(hourly_data.get(str(h).zfill(2), 0)) for h in range(24)]
+            
+            return jsonify({
+                'total_activations': total_activations,
+                'total_versus': total_versus,
+                'most_popular_product': most_popular[1] if most_popular else None,
+                'product_stats': product_stats,
+                'hourly_stats': hourly_stats
+            })
+            
+    except Exception as e:
+        print(f"Error en stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
     
+    
+@app.route('/api/sensor_video/<int:sensor_id>', methods=['DELETE'])
+@login_required
+def remove_sensor_video(sensor_id):
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener ruta del video
+            c.execute('SELECT video_path FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
+            result = c.fetchone()
+            
+            if result:
+                video_path = os.path.join(app.config['UPLOAD_FOLDER'], 
+                                        os.path.basename(result[0]))
+                # Eliminar archivo si existe
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    
+                # Eliminar registro
+                c.execute('DELETE FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
+                conn.commit()
+                return jsonify({'success': True})
+                
+        return jsonify({'error': 'Video no encontrado'}), 404
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+ 
+@app.route('/api/update-extra-content', methods=['POST'])
+@login_required
+def update_extra_content():
+    if 'content' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+        
+    file = request.files['content']
+    position = request.form.get('position', 'bottom-right')
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    try:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            content_type = 'video' if filename.endswith(('.mp4','.webm','.mov')) else 'image'
+            c.execute('''INSERT INTO extra_content 
+                        (content_path, position, content_type) 
+                        VALUES (?, ?, ?)''',
+                     (os.path.join('videos', filename), position, content_type))
+            conn.commit()
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/extra-content')
 def get_extra_content():
@@ -495,8 +573,8 @@ def get_extra_content():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 if __name__ == '__main__':
-    setup_gpio()
     init_db()
     if not os.path.exists(UPLOAD_FOLDER):
         os.makedirs(UPLOAD_FOLDER)

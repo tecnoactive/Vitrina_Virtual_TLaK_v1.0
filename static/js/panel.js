@@ -1,5 +1,5 @@
 // Configuración
-const SENSOR_PINS = [17, 27, 4, 5, 6, 13, 18, 22, 26, 19];
+const SENSOR_PINS = [17, 27, 5, 6, 13, 18, 22, 26, 19];
 let currentUploads = new Set();
 let previewInterval = null;
 
@@ -117,38 +117,74 @@ function updateLivePreview() {
     }
 }
 // Gestión de sensores
+
+
 async function loadSensorList() {
     const sensorList = document.getElementById('sensor-list');
     if (!sensorList) return;
 
     showLoading('Cargando sensores...');
     try {
-        // Obtener lista actual de etiquetas
+        // Get current sensor labels and states
         const etiquetasResponse = await fetch('/api/etiquetas-sensores');
         const etiquetas = await etiquetasResponse.json();
-        console.log('Etiquetas cargadas:', etiquetas); // Debug
 
-        // Obtener videos actuales
+        // Get current videos
         const videosResponse = await fetch('/api/sensor_videos');
         const videos = await videosResponse.json();
         const videoMap = new Map(videos.map(v => [v.sensor_id, v]));
 
-        // Limpiar y reconstruir la lista
+        // New sensor mapping
+        const sensorMapping = {
+            17: 'Sensor 1',
+            27: 'Sensor 2',
+            5: 'Sensor 3',
+            6: 'Sensor 4',
+            13: 'Sensor 5',
+            18: 'Sensor 6',
+            22: 'Sensor 7',
+            26: 'Sensor 8',
+            19: 'Sensor 9'
+        };
+        function getSensorPin(num) {
+            const pinMap = {
+                1: 17,
+                2: 27,
+                3: 5,
+                4: 6,
+                5: 13,
+                6: 18,
+                7: 22,
+                8: 26,
+                9: 19
+            };
+            return pinMap[num];
+        }
+
         sensorList.innerHTML = '';
-        SENSOR_PINS.forEach(sensorId => {
-            const videoInfo = videoMap.get(sensorId);
-            const etiqueta = etiquetas[sensorId];
-            const card = createSensorCard(sensorId, videoInfo, etiqueta);
+        [1,2,3,4,5,6,7,8,9].forEach(num => {
+            const pin = getSensorPin(num);  // Función auxiliar para mapear número a pin
+            const videoInfo = videoMap.get(pin);
+            const etiqueta = etiquetas[pin];
+            const card = createSensorCard(pin, videoInfo, etiqueta, `Sensor ${num}`);
             sensorList.appendChild(card);
         });
     } catch (error) {
-        console.error('Error cargando lista de sensores:', error);
-        showError('Error al cargar la lista de sensores');
+        console.error('Error cargando sensores:', error);
+        showError('Error al cargar los sensores');
     } finally {
         hideLoading();
     }
 }
 
+
+const toggleAudio = async (sensorId) => {
+    const video = document.querySelector(`#video-${sensorId}`);
+    if (video) {
+      video.muted = !video.muted;
+      localStorage.setItem(`audio_${sensorId}`, video.muted ? 'muted' : 'unmuted');
+    }
+  };
 
 async function actualizarEtiquetaSensor(pin, nombre) {
     console.log('Actualizando sensor:', pin, 'con nombre:', nombre); // Debug
@@ -184,21 +220,26 @@ async function actualizarEtiquetaSensor(pin, nombre) {
     }
 }
 
-function createSensorCard(sensorId, videoInfo, etiqueta) {
+function createSensorCard(sensorId, videoInfo, etiqueta, nombreMapeado) {
     const card = document.createElement('div');
     card.className = 'sensor-card';
     
-    const nombreActual = etiqueta || `Sensor ${sensorId}`;
-    console.log('Creando card para sensor:', sensorId, 'nombre:', nombreActual); // Debug
+    const isEnabled = etiqueta?.enabled ?? false;
+    const isDefaultSensor = [17, 27, 5, 6, 13, 18].includes(sensorId);
     
     card.innerHTML = `
-        <h3>${nombreActual}</h3>
+        <h3>${nombreMapeado}</h3>
         <div class="sensor-info">
-            <input type="text" 
-                   class="sensor-label-input"
-                   value="${nombreActual}"
-                   data-sensor-id="${sensorId}"
-                   onchange="actualizarEtiquetaSensor(${sensorId}, this.value)">
+            <div class="sensor-controls">
+                <label class="switch">
+                    <input type="checkbox" 
+                           ${isEnabled ? 'checked' : ''} 
+                           ${isDefaultSensor ? 'disabled' : ''}
+                           onchange="toggleSensor(${sensorId}, this.checked)">
+                    <span class="slider"></span>
+                </label>
+                <span>${isDefaultSensor ? 'Sensor Principal' : (isEnabled ? 'Habilitado' : 'Deshabilitado')}</span>
+            </div>
             <div class="video-section">
                 <p>Video actual: ${videoInfo ? videoInfo.video_path.split('/').pop() : 'Sin video'}</p>
                 <input type="file" id="video-${sensorId}" accept="video/*">
@@ -219,6 +260,22 @@ function createSensorCard(sensorId, videoInfo, etiqueta) {
     return card;
 }
 
+async function toggleSensor(pin, enabled) {
+    try {
+        const response = await fetch('/api/toggle-sensor', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ pin, enabled })
+        });
+        
+        if (response.ok) {
+            showSuccess(`Sensor ${enabled ? 'habilitado' : 'deshabilitado'}`);
+            await loadSensorList();
+        }
+    } catch (error) {
+        showError('Error al cambiar estado del sensor');
+    }
+}
 
 function showExtraContentInfo() {
     const extraContentSection = document.getElementById('extra-content-section');
@@ -244,22 +301,17 @@ function showExtraContentInfo() {
         });
 }
 
-// Funciones de Preview de Video
+// Actualizar función de preview
 function showPreview(videoPath) {
     const modal = document.getElementById('preview-modal');
     const video = document.getElementById('preview-video');
     
-    if (!modal || !video) {
-        console.error('Elementos de preview no encontrados');
-        return;
-    }
-    
+    if (!modal || !video) return;
     video.src = videoPath;
     modal.style.display = 'flex';
-    video.play().catch(() => {
-        console.log('Autoplay no permitido');
-    });
+    video.play().catch(console.error);
 }
+
 
 function closePreview() {
     const modal = document.getElementById('preview-modal');
@@ -306,21 +358,20 @@ async function assignVideo(sensorId) {
     }
 }
 
+
 async function removeVideo(sensorId) {
     if (!confirm('¿Estás seguro de eliminar este video?')) return;
-
     showLoading('Eliminando video...');
+    
     try {
-        const response = await fetch(`/api/remove_video/${sensorId}`, {
+        const response = await fetch('/api/sensor_video/' + sensorId, {
             method: 'DELETE'
         });
-
-        if (response.ok) {
-            showSuccess('Video eliminado correctamente');
-            await loadSensorList();
-        } else {
-            throw new Error('Error al eliminar');
-        }
+        
+        if (!response.ok) throw new Error('Error al eliminar');
+        
+        showSuccess('Video eliminado correctamente');
+        await loadSensorList();
     } catch (error) {
         console.error('Error:', error);
         showError('Error al eliminar el video');
@@ -328,6 +379,9 @@ async function removeVideo(sensorId) {
         hideLoading();
     }
 }
+
+document.querySelector('.preview-toggle')?.remove();
+
 
 // Gestión de playlist de fondo
 async function loadBackgroundVideos() {

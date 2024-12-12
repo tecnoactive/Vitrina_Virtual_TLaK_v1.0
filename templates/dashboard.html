@@ -1,199 +1,64 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Vitrina Digital</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
-            background: #f0f2f5;
-        }
-        .nav-menu {
-            background: #1a73e8;
-            color: white;
-            padding: 15px;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 1000;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .nav-menu a {
-            color: white;
-            text-decoration: none;
-            margin-right: 20px;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 80px auto 20px;
-            padding: 0 20px;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .stats-card {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .stats-card h2 {
-            color: #1a73e8;
-            margin-top: 0;
-            border-bottom: 2px solid #f0f2f5;
-            padding-bottom: 10px;
-        }
-        .stats-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-        .stats-table th,
-        .stats-table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #f0f2f5;
-        }
-        .stats-table th {
-            font-weight: 600;
-            color: #5f6368;
-            background: #f8f9fa;
-        }
-        .stats-table tr:hover {
-            background: #f8f9fa;
-        }
-        .chart-container {
-            height: 300px;
-            margin-top: 20px;
-            position: relative;
-        }
-        .summary-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat-box {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .stat-box h3 {
-            margin: 0;
-            color: #5f6368;
-            font-size: 14px;
-        }
-        .stat-box .value {
-            font-size: 24px;
-            color: #1a73e8;
-            margin: 10px 0;
-            font-weight: bold;
-        }
-        .button {
-            background: #1a73e8;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .button:hover {
-            background: #1557b0;
-        }
-        .refresh-button {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-        }
-        .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            display: none;
-        }
-        .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #1a73e8;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
 </head>
 <body>
-    <div id="loading" class="loading">
-        <div class="loading-spinner"></div>
-    </div>
-
-    <div class="nav-menu">
+    <nav class="nav-menu">
         <div>
+            <img src="/static/images/logo.png" alt="Logo" class="logo">
             <a href="/panel">Panel de Control</a>
-            <a href="#" onclick="refreshStats()">Actualizar Datos</a>
         </div>
-        <button onclick="logout()" class="button">Cerrar Sesión</button>
-    </div>
+        <button onclick="handleLogout()" class="button danger">Cerrar Sesión</button>
+    </nav>
 
     <div class="container">
-        <div class="filters">
-            <div class="date-filter">
+        <div class="period-filter">
+            <select id="period" onchange="handlePeriodChange()">
+                <option value="today">Hoy</option>
+                <option value="week">Esta Semana</option>
+                <option value="month" selected>Este Mes</option>
+                <option value="custom">Personalizado</option>
+            </select>
+
+            <div id="dateInputs" style="display: none;">
                 <label>Desde: <input type="date" id="dateFrom"></label>
                 <label>Hasta: <input type="date" id="dateTo"></label>
-                <button onclick="applyFilters()">Aplicar Filtros</button>
             </div>
+
+            <button onclick="refreshStats()" class="button primary">Actualizar</button>
         </div>
 
-        <div class="summary-stats">
-            <div class="stat-box">
-                <h3>Total de Activaciones</h3>
-                <div id="total-activations" class="value">0</div>
-            </div>
-            <div class="stat-box">
-                <h3>Total de Versus</h3>
-                <div id="total-versus" class="value">0</div>
-            </div>
-            <div class="stat-box">
-                <h3>Producto Más Popular</h3>
-                <div id="most-popular" class="value">-</div>
-            </div>
-            <div class="stat-box">
-                <h3>Versus Más Común</h3>
-                <div id="most-common-versus" class="value">-</div>
-            </div>
-        </div>
         <div class="stats-grid">
-            <div class="stats-card">
-                <h2>Productos Más Populares</h2>
-                <div class="chart-container">
-                    <div class="product-timeline">
-                    </div>
+            <div class="stat-card">
+                <h3>Total Activaciones</h3>
+                <div id="total-activations" class="stat-value">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Versus</h3>
+                <div id="total-versus" class="stat-value">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Producto Más Popular</h3>
+                <div id="most-popular" class="stat-value">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Versus Más Común</h3>
+                <div id="most-common" class="stat-value">-</div>
+            </div>
+        </div>
 
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h2>Activaciones por Producto</h2>
+                <div class="chart-container">
                     <canvas id="products-chart"></canvas>
                 </div>
-                <div class="chart-container" id="productsChart"></div>
-            </div>
-                <table class="stats-table">
+                <table>
                     <thead>
                         <tr>
                             <th>Producto</th>
@@ -205,16 +70,16 @@
                 </table>
             </div>
 
-            <div class="stats-card">
+            <div class="chart-card">
                 <h2>Versus Más Frecuentes</h2>
                 <div class="chart-container">
                     <canvas id="versus-chart"></canvas>
                 </div>
-                <table class="stats-table">
+                <table>
                     <thead>
                         <tr>
                             <th>Combinación</th>
-                            <th>Veces</th>
+                            <th>Total</th>
                             <th>Último Versus</th>
                         </tr>
                     </thead>
@@ -222,236 +87,26 @@
                 </table>
             </div>
 
-            <div class="stats-card">
+            <div class="chart-card">
                 <h2>Actividad por Hora</h2>
                 <div class="chart-container">
                     <canvas id="hourly-chart"></canvas>
                 </div>
             </div>
+
+            <div class="chart-card">
+                <h2>Tendencia de Activaciones</h2>
+                <div class="chart-container">
+                    <canvas id="trend-chart"></canvas>
+                </div>
+            </div>
         </div>
     </div>
 
-    <script>
-        // Variables globales para los gráficos
-        let charts = {
-            products: null,
-            versus: null,
-            hourly: null
-        };
-        
-        let productNames = {};
+    <div id="loading" class="loading" style="display: none;">
+        <div class="spinner"></div>
+    </div>
 
-        // Inicialización
-        document.addEventListener('DOMContentLoaded', async () => {
-            await loadProductNames();
-            await refreshStats();
-            // Actualizar cada 5 minutos
-            setInterval(refreshStats, 300000);
-        });
-
-        async function loadProductNames() {
-            try {
-                const response = await fetch('/api/sensor-names');
-                productNames = await response.json();
-            } catch (error) {
-                console.error('Error cargando nombres:', error);
-            }
-        }
-
-        async function refreshStats() {
-            showLoading();
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                
-                updateSummaryStats(data.general_stats);
-                updateProductStats(data.product_stats);
-                updateVersusStats(data.versus_stats);
-                updateHourlyStats(data.hourly_stats);
-            } catch (error) {
-                console.error('Error actualizando estadísticas:', error);
-                alert('Error al cargar estadísticas');
-            } finally {
-                hideLoading();
-            }
-        }
-
-        function updateSummaryStats(stats) {
-            document.getElementById('total-activations').textContent = stats.total_activations;
-            document.getElementById('total-versus').textContent = stats.total_versus;
-            document.getElementById('most-popular').textContent = 
-                productNames[stats.most_popular_sensor] || `Sensor ${stats.most_popular_sensor}`;
-            document.getElementById('most-common-versus').textContent = stats.most_common_versus;
-        }
-
-        function updateProductStats(stats) {
-            // Actualizar tabla
-            const tbody = document.getElementById('products-table');
-            tbody.innerHTML = '';
-            
-            stats.forEach(stat => {
-                const row = tbody.insertRow();
-                const productName = productNames[stat.sensor_id] || `Sensor ${stat.sensor_id}`;
-                row.innerHTML = `
-                    <td>${productName}</td>
-                    <td>${stat.activations}</td>
-                    <td>${formatDate(stat.last_activation)}</td>
-                `;
-            });
-
-            // Actualizar gráfico
-            const ctx = document.getElementById('products-chart').getContext('2d');
-            
-            if (charts.products) {
-                charts.products.destroy();
-            }
-            
-            charts.products = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: stats.map(s => productNames[s.sensor_id] || `Sensor ${s.sensor_id}`),
-                    datasets: [{
-                        label: 'Activaciones',
-                        data: stats.map(s => s.activations),
-                        backgroundColor: 'rgba(26, 115, 232, 0.5)',
-                        borderColor: 'rgba(26, 115, 232, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    }
-                }
-            });
-        }
-
-        function updateVersusStats(stats) {
-            // Actualizar tabla
-            const tbody = document.getElementById('versus-table');
-            tbody.innerHTML = '';
-            
-            stats.forEach(stat => {
-                const row = tbody.insertRow();
-                const product1 = productNames[stat.sensor1_id] || `Sensor ${stat.sensor1_id}`;
-                const product2 = productNames[stat.sensor2_id] || `Sensor ${stat.sensor2_id}`;
-                row.innerHTML = `
-                    <td>${product1} vs ${product2}</td>
-                    <td>${stat.count}</td>
-                    <td>${formatDate(stat.last_versus)}</td>
-                `;
-            });
-
-            // Actualizar gráfico
-            const ctx = document.getElementById('versus-chart').getContext('2d');
-            
-            if (charts.versus) {
-                charts.versus.destroy();
-            }
-            
-            charts.versus = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: stats.map(s => {
-                        const p1 = productNames[s.sensor1_id] || `Sensor ${s.sensor1_id}`;
-                        const p2 = productNames[s.sensor2_id] || `Sensor ${s.sensor2_id}`;
-                        return `${p1} vs ${p2}`;
-                    }),
-                    datasets: [{
-                        label: 'Versus',
-                        data: stats.map(s => s.count),
-                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    }
-                }
-            });
-        }
-
-        function updateHourlyStats(stats) {
-            const ctx = document.getElementById('hourly-chart').getContext('2d');
-            
-            if (charts.hourly) {
-                charts.hourly.destroy();
-            }
-            
-            charts.hourly = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: Array.from({length: 24}, (_, i) => `${i}:00`),
-                    datasets: [{
-                        label: 'Activaciones por hora',
-                        data: stats,
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                        tension: 0.4,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-        }
-
-        function formatDate(dateString) {
-            if (!dateString) return '-';
-            const date = new Date(dateString);
-            return date.toLocaleString('es-ES', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
-
-        function showLoading() {
-            document.getElementById('loading').style.display = 'flex';
-        }
-
-        function hideLoading() {
-            document.getElementById('loading').style.display = 'none';
-        }
-
-        async function logout() {
-            try {
-                await fetch('/api/logout', { method: 'POST' });
-                window.location.href = '/login';
-            } catch (error) {
-                console.error('Error en logout:', error);
-                alert('Error al cerrar sesión');
-            }
-        }
-    </script>
+    <script src="/static/js/dashboard.js"></script>
 </body>
 </html>

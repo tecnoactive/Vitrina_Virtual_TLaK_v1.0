@@ -1,5 +1,5 @@
 // Configuración global
-const SENSOR_PINS = [17, 27, 4, 5, 6, 13, 18, 22, 26, 19];
+const SENSOR_PINS = [17, 27, 5, 6, 13, 18, 22, 26, 19];
 const SENSOR_CHECK_INTERVAL = 250;
 let isConnected = false;
 let connectionRetries = 0;
@@ -54,8 +54,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setupVideoEventListeners();
         debugPanel.style.display = localStorage.getItem('debugEnabled') === 'true' ? 'block' : 'none';
         await initBackgroundPlaylist();
-        await initSensorMonitoring();
-        await handleAutoplay();
+        await initializeVideoPlayback();
     } catch (error) {
         debugLog(`Error en inicialización: ${error.message}`);
         showConnectionError();
@@ -87,38 +86,82 @@ function setupVideoEventListeners() {
     });
 }
 // Manejo de reproducción de videos
+
+
+const handleVideoPlayback = async (video) => {
+    video.muted = true; // Siempre iniciar muteado
+    try {
+      await video.play();
+    } catch (error) {
+      // Intentar reproducir en loop hasta que funcione
+      const playAttempt = setInterval(() => {
+        video.play()
+        .then(() => {
+          clearInterval(playAttempt);
+        })
+        .catch(() => {
+          console.log("Intentando reproducir...");
+        });
+      }, 1000);
+    }
+  };
+
+  const syncWithPanel = () => {
+    const eventSource = new EventSource('/api/events');
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'config_changed') {
+        window.location.reload();
+      }
+    };
+  };
+
+
 async function playCurrentVideo() {
-    if (!backgroundPlayer.playlist.length) return;
+    if (!backgroundPlayer.playlist.length || isTransitioning) return;
     
     const currentVideo = backgroundPlayer.playlist[backgroundPlayer.currentIndex];
-    debugLog(`Reproduciendo video ${backgroundPlayer.currentIndex + 1}/${backgroundPlayer.playlist.length}: ${currentVideo.video_path}`);
+    const video = backgroundPlayer.video;
     
     try {
-        backgroundPlayer.video.src = `/static/${currentVideo.video_path}`;
-        backgroundPlayer.video.load();
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
         
-        await new Promise((resolve) => {
-            const onCanPlay = () => {
-                backgroundPlayer.video.removeEventListener('canplay', onCanPlay);
-                resolve();
-            };
-            backgroundPlayer.video.addEventListener('canplay', onCanPlay);
-        });
-        
-        await backgroundPlayer.video.play();
+        // Prevenir múltiples cargas
+        if (video.src !== `/static/${currentVideo.video_path}`) {
+            video.src = `/static/${currentVideo.video_path}`;
+            await new Promise(resolve => {
+                video.onloadeddata = resolve;
+            });
+        }
+
+        await video.play();
         backgroundPlayer.isPlaying = true;
         
-        backgroundPlayer.video.onended = () => {
-            if (currentMode === 'background') {
+        video.onended = () => {
+            if (currentMode === 'background' && !isTransitioning) {
                 backgroundPlayer.currentIndex = (backgroundPlayer.currentIndex + 1) % backgroundPlayer.playlist.length;
-                setTimeout(playCurrentVideo, 100);
+                playCurrentVideo();
             }
         };
     } catch (error) {
-        debugLog(`Error reproduciendo video: ${error.message}`);
-        backgroundPlayer.currentIndex = (backgroundPlayer.currentIndex + 1) % backgroundPlayer.playlist.length;
-        setTimeout(playCurrentVideo, 1000);
+        console.error(`Error reproduciendo video: ${error.message}`);
+        if (!isTransitioning) {
+            setTimeout(() => playCurrentVideo(), 1000);
+        }
     }
+}
+
+async function initializeVideoPlayback() {
+    const video = backgroundPlayer.video;
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.setAttribute('data-power-mode', 'high-performance');
+    await playCurrentVideo();
 }
 
 async function handleAutoplay() {
@@ -172,9 +215,8 @@ async function loadBackgroundVideos() {
 // Funciones auxiliares para videos
 async function tryPlayVideo(video) {
     if (!video || !video.src) return;
-    
+    video.muted = true;
     try {
-        video.muted = true;
         await video.play();
     } catch (error) {
         debugLog(`Error reproduciendo video ${video.id}: ${error.message}`);
@@ -210,25 +252,24 @@ function startSensorMonitoring() {
 }
 
 async function checkSensors() {
-    const now = Date.now();
-    if (now - lastCheckTime < SENSOR_CHECK_INTERVAL || isTransitioning) return;
-    lastCheckTime = now;
-
+    if (isTransitioning) return;
+    
     try {
         const response = await fetch('/api/sensor_status');
-        if (!response.ok) throw new Error('Error en la respuesta del servidor');
-        
         const data = await response.json();
-        const activeSensors = data.active_sensors || [];
+        
+        if (!response.ok) throw new Error('Error en respuesta del servidor');
+        
+        // Los sensores activos son los que NO están detectando (valor 0)
+        const activeSensors = Object.entries(data.status)
+            .filter(([_, value]) => value === 0)
+            .map(([pin]) => parseInt(pin));
 
-        clearTimeout(debounceTimeout);
-        debounceTimeout = setTimeout(async () => {
-            if (JSON.stringify(activeSensors) !== JSON.stringify(lastActiveSensors)) {
-                debugLog(`Cambio en sensores: ${activeSensors.join(', ')}`);
-                await handleSensorChange(activeSensors);
-                lastActiveSensors = activeSensors;
-            }
-        }, 300);
+        if (JSON.stringify(activeSensors) !== JSON.stringify(lastActiveSensors)) {
+            debugLog(`Sensores activos: ${activeSensors.join(', ')}`);
+            await handleSensorChange(activeSensors);
+            lastActiveSensors = activeSensors;
+        }
     } catch (error) {
         debugLog(`Error en monitoreo: ${error.message}`);
     }
@@ -283,14 +324,16 @@ async function switchToBackgroundMode() {
     
     await loadBackgroundVideos();
 }
+
 async function switchToSingleMode(sensorId) {
-    debugLog(`Cambiando a modo único - Sensor ${sensorId}`);
+    debugLog(`Modo único - Sensor ${sensorId}`);
     try {
         const videoResponse = await fetch(`/api/sensor_video/${sensorId}`);
         const videoData = await videoResponse.json();
-
-        const statusResponse = await fetch(`/api/sensor_status/${sensorId}`);
-        if (!statusResponse.ok) throw new Error('Error obteniendo estado del sensor');
+        
+        if (!videoData.video_path) {
+            throw new Error('Video no encontrado');
+        }
 
         stopAllVideos();
         
@@ -301,51 +344,65 @@ async function switchToSingleMode(sensorId) {
         quadScreen.style.display = 'none';
         backgroundPlayer.video.style.display = 'block';
         backgroundPlayer.video.src = `/static/${videoData.video_path}`;
-        backgroundPlayer.video.muted = localStorage.getItem(`sensor_${sensorId}_muted`) === 'true';
-        backgroundPlayer.video.loop = true;
+        backgroundPlayer.video.muted = false;
+        backgroundPlayer.video.loop = false;
         
-        await tryPlayVideo(backgroundPlayer.video);
+        await backgroundPlayer.video.play();
         currentMode = 'single';
+        
+        // Volver a modo background cuando termine el video
+        backgroundPlayer.video.onended = () => {
+            switchToBackgroundMode();
+        };
     } catch (error) {
-        debugLog(`Error en modo único: ${error.message}`);
+        debugLog(`Error: ${error.message}`);
         await switchToBackgroundMode();
     }
 }
 
 async function switchToVersusMode(sensor1, sensor2) {
-    debugLog(`Iniciando versus: ${sensor1} vs ${sensor2}`);
+    debugLog(`Versus: ${sensor1} vs ${sensor2}`);
     try {
-        stopAllVideos();
         const videos = await Promise.all([
-            getVideoForSensor(sensor1), 
-            getVideoForSensor(sensor2)
+            fetch(`/api/sensor_video/${sensor1}`).then(r => r.json()),
+            fetch(`/api/sensor_video/${sensor2}`).then(r => r.json())
         ]);
- 
+        
+        if (!videos[0].video_path || !videos[1].video_path) {
+            throw new Error('Videos no encontrados');
+        }
+
+        stopAllVideos();
         backgroundPlayer.video.style.display = 'none';
-        document.querySelector('.quad-screen').style.display = 'none';
-        document.querySelector('.split-screen').style.display = 'flex';
- 
+        
+        const splitScreen = document.querySelector('.split-screen');
+        splitScreen.style.display = 'flex';
+        
         const video1 = document.getElementById('video1');
         const video2 = document.getElementById('video2');
- 
+        
         video1.src = `/static/${videos[0].video_path}`;
         video2.src = `/static/${videos[1].video_path}`;
- 
-        video1.muted = localStorage.getItem(`sensor_${sensor1}_muted`) === 'true';
-        video2.muted = localStorage.getItem(`sensor_${sensor2}_muted`) === 'true';
- 
-        [video1, video2].forEach(v => {
-            v.loop = true;
-            v.style.display = 'block';
-        });
- 
-        await Promise.all([tryPlayVideo(video1), tryPlayVideo(video2)]);
+        video1.loop = false;
+        video2.loop = false;
+        
+        await Promise.all([video1.play(), video2.play()]);
         currentMode = 'versus';
+        
+        // Volver a modo background cuando terminen ambos videos
+        let ended = 0;
+        [video1, video2].forEach(video => {
+            video.onended = () => {
+                ended++;
+                if (ended === 2) switchToBackgroundMode();
+            };
+        });
     } catch (error) {
-        debugLog(`Error en versus: ${error.message}`);
+        debugLog(`Error: ${error.message}`);
         await switchToBackgroundMode();
     }
- }
+}
+
 
  function getVideoOrderForPosition(position) {
     const positions = {
@@ -357,98 +414,123 @@ async function switchToVersusMode(sensor1, sensor2) {
     return positions[position] || positions['inferior-derecha'];
 }
 
-// Continúa con switchToTripleMode y switchToQuadMode...
+// switchToTripleMode y switchToQuadMode
+
 async function switchToTripleMode(sensors) {
-    debugLog(`Iniciando triple: ${sensors.join(' vs ')}`);
+    debugLog(`Triple: ${sensors.join(' vs ')}`);
     try {
-        stopAllVideos();
         const [videos, extraContent] = await Promise.all([
-            Promise.all(sensors.map(getVideoForSensor)),
+            Promise.all(sensors.map(s => fetch(`/api/sensor_video/${s}`).then(r => r.json()))),
             fetch('/api/extra-content').then(r => r.json())
         ]);
- 
+        
+        if (videos.some(v => !v.video_path)) {
+            throw new Error('Videos no encontrados');
+        }
+
+        stopAllVideos();
         backgroundPlayer.video.style.display = 'none';
         document.querySelector('.split-screen').style.display = 'none';
         document.querySelector('.quad-screen').style.display = 'grid';
- 
-        const position = extraContent.position || 'inferior-derecha';
-        const videoOrder = getVideoOrderForPosition(position);
- 
-        // Configurar los 3 videos principales
+
+        const quadVideos = [
+            document.getElementById('quad1'),
+            document.getElementById('quad2'),
+            document.getElementById('quad3'),
+            document.getElementById('quad4')
+        ];
+
+        // Configurar videos principales
         for (let i = 0; i < 3; i++) {
-            const video = document.getElementById(videoOrder[i]);
+            const video = quadVideos[i];
             video.src = `/static/${videos[i].video_path}`;
-            video.muted = localStorage.getItem(`sensor_${sensors[i]}_muted`) === 'true';
-            video.loop = true;
             video.style.display = 'block';
-            await tryPlayVideo(video);
+            video.loop = false;
         }
- 
+
         // Configurar contenido extra
-        const extraContainer = document.getElementById('extra-content');
-        const extraVideo = document.getElementById(videoOrder[3]);
-        
-        extraContainer.style.backgroundPosition = ''; // Limpiar posición previa
-        
-        if (extraContent.type === 'image') {
-            extraVideo.style.display = 'none';
-            extraContainer.style.display = 'block';
-            extraContainer.style.backgroundImage = `url(/static/${extraContent.path})`;
-            extraContainer.style.backgroundSize = 'cover';
-            extraContainer.style.backgroundRepeat = 'no-repeat';
-            
-            // Establecer posición
-            const [vertical, horizontal] = position.split('-');
-            extraContainer.style[vertical] = '0';
-            extraContainer.style[horizontal] = '0';
-        } else if (extraContent.type === 'video') {
-            extraContainer.style.display = 'none';
-            extraVideo.src = `/static/${extraContent.path}`;
-            extraVideo.style.display = 'block';
-            extraVideo.loop = true;
-            await tryPlayVideo(extraVideo);
+        if (extraContent.path) {
+            if (extraContent.type === 'video') {
+                quadVideos[3].src = `/static/${extraContent.path}`;
+                quadVideos[3].style.display = 'block';
+                quadVideos[3].loop = true;
+                await quadVideos[3].play();
+            }
         }
- 
+
+        await Promise.all(quadVideos.slice(0,3).map(v => v.play()));
         currentMode = 'triple';
+
+        // Control de finalización
+        let ended = 0;
+        quadVideos.slice(0,3).forEach(video => {
+            video.onended = () => {
+                ended++;
+                if (ended === 3) switchToBackgroundMode();
+            };
+        });
     } catch (error) {
-        debugLog(`Error en modo triple: ${error.message}`);
+        debugLog(`Error: ${error.message}`);
         await switchToBackgroundMode();
     }
 }
 
-async function getVideoForSensor(sensorId) {
+async function switchToQuadMode(sensors) {
+    debugLog(`Quad: ${sensors.join(' vs ')}`);
+    try {
+        const videos = await Promise.all(
+            sensors.map(s => fetch(`/api/sensor_video/${s}`).then(r => r.json()))
+        );
+        
+        if (videos.some(v => !v.video_path)) {
+            throw new Error('Videos no encontrados');
+        }
+
+        stopAllVideos();
+        backgroundPlayer.video.style.display = 'none';
+        document.querySelector('.split-screen').style.display = 'none';
+        document.querySelector('.quad-screen').style.display = 'grid';
+
+        const quadVideos = [
+            document.getElementById('quad1'),
+            document.getElementById('quad2'),
+            document.getElementById('quad3'),
+            document.getElementById('quad4')
+        ];
+
+        // Configurar videos
+        quadVideos.forEach((video, i) => {
+            video.src = `/static/${videos[i].video_path}`;
+            video.style.display = 'block';
+            video.loop = false;
+        });
+
+        await Promise.all(quadVideos.map(v => v.play()));
+        currentMode = 'quad';
+
+        // Control de finalización
+        let ended = 0;
+        quadVideos.forEach(video => {
+            video.onended = () => {
+                ended++;
+                if (ended === 4) switchToBackgroundMode();
+            };
+        });
+    } catch (error) {
+        debugLog(`Error: ${error.message}`);
+        await switchToBackgroundMode();
+    }
+}
+
+
+
+ async function getVideoForSensor(sensorId) {
     const response = await fetch(`/api/sensor_video/${sensorId}`);
     if (!response.ok) throw new Error(`Error obteniendo video para sensor ${sensorId}`);
     return response.json();
 }
 
 
-async function switchToQuadMode(sensors) {
-    debugLog(`Iniciando quad: ${sensors.join(' vs ')}`);
-    try {
-        stopAllVideos();
-        const videos = await Promise.all(sensors.map(getVideoForSensor));
- 
-        backgroundPlayer.video.style.display = 'none';
-        document.querySelector('.split-screen').style.display = 'none';
-        document.querySelector('.quad-screen').style.display = 'grid';
-        document.getElementById('extra-content').style.display = 'none';
- 
-        for (let i = 0; i < 4; i++) {
-            const video = document.getElementById(`quad${i+1}`);
-            video.src = `/static/${videos[i].video_path}`;
-            video.muted = localStorage.getItem(`sensor_${sensors[i]}_muted`) === 'true';
-            video.loop = true;
-            video.style.display = 'block';
-            await tryPlayVideo(video);
-        }
- 
-        currentMode = 'quad';
-    } catch (error) {
-        debugLog(`Error en modo quad: ${error.message}`);
-        await switchToBackgroundMode();
-    }
- }
 
 // Funciones de utilidad y UI
 function getVideoOrderForPosition(position) {

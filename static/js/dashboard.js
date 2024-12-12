@@ -1,205 +1,274 @@
 let charts = {};
+let productNames = {};
 
-document.addEventListener('DOMContentLoaded', function() {
-    loadStats();
-    setupEventListeners();
-    // Actualizar cada minuto
-    setInterval(loadStats, 60000);
+document.addEventListener('DOMContentLoaded', async () => {
+    await initializeDashboard();
+    await refreshStats();
+    setInterval(refreshStats, 60000);
 });
 
-document.addEventListener('DOMContentLoaded', () => {
-    const today = new Date();
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(today.getDate() - 30);
-    
-    document.getElementById('dateFrom').value = thirtyDaysAgo.toISOString().split('T')[0];
-    document.getElementById('dateTo').value = today.toISOString().split('T')[0];
-    
-    loadStats();
-});
-
-function setupEventListeners() {
-    document.getElementById('logout')?.addEventListener('click', async () => {
-        try {
-            await fetch('/api/logout', { method: 'POST' });
-            window.location.href = '/';
-        } catch (error) {
-            console.error('Error en logout:', error);
-        }
-    });
+async function initializeDashboard() {
+    await loadProductNames();
+    setupDateDefaults();
+    handlePeriodChange();
 }
 
-async function loadStats() {
-    const dateFrom = document.getElementById('dateFrom').value;
-    const dateTo = document.getElementById('dateTo').value;
-
+async function loadProductNames() {
     try {
-        const response = await fetch(`/api/stats?from=${dateFrom}&to=${dateTo}`);
-        const data = await response.json();
-        
-        updateSummaryStats(data.general_stats);
-        updateProductStats(data.product_stats);
-        updateProductChanges(data.product_changes);  
-        updateVersusStats(data.versus_stats);
-        updateHourlyStats(data.hourly_stats);
+        const response = await fetch('/api/sensor-names');
+        productNames = await response.json();
     } catch (error) {
-        console.error('Error cargando estadísticas:', error);
+        console.error('Error cargando nombres:', error);
     }
 }
 
-
-function updateProductChanges(changes) {
-    const timeline = document.querySelector('.product-timeline');
-    timeline.innerHTML = changes.map(change => `
-        <div class="change-entry">
-            <div class="change-date">${formatDate(change.change_date)}</div>
-            <div class="change-details">
-                Sensor ${change.sensor_id}: 
-                ${change.old_name || 'Sin nombre'} → ${change.new_name}
-            </div>
-        </div>
-    `).join('');
+function setupDateDefaults() {
+    const today = new Date();
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    
+    document.getElementById('dateFrom').value = formatDateForInput(lastMonth);
+    document.getElementById('dateTo').value = formatDateForInput(today);
 }
 
+function handlePeriodChange() {
+    const period = document.getElementById('period').value;
+    document.getElementById('dateInputs').style.display = 
+        period === 'custom' ? 'block' : 'none';
+}
 
-function updateProductStats(stats) {
-    // Actualizar tabla
-    const tbody = document.querySelector('#productsTable tbody');
-    tbody.innerHTML = '';
+async function refreshStats() {
+    const params = getFilterParams();
+    showLoading();
     
-    stats.forEach(stat => {
-        const row = tbody.insertRow();
-        row.innerHTML = `
-            <td>Sensor ${stat.sensor_id}</td>
-            <td>${stat.activations}</td>
-            <td>${formatDate(stat.last_activation)}</td>
-        `;
-    });
-
-    // Actualizar gráfico
-    const ctx = document.getElementById('productsChart').getContext('2d');
-    
-    if (charts.products) {
-        charts.products.destroy();
+    try {
+        const response = await fetch(`/api/stats?${params}`);
+        if (!response.ok) throw new Error('Error en la respuesta del servidor');
+        
+        const data = await response.json();
+        updateDashboard(data);
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error cargando estadísticas');
+    } finally {
+        hideLoading();
     }
+}
+
+function getFilterParams() {
+    const period = document.getElementById('period').value;
+    const params = new URLSearchParams({ period });
+    
+    if (period === 'custom') {
+        params.append('from', document.getElementById('dateFrom').value);
+        params.append('to', document.getElementById('dateTo').value);
+    }
+    
+    return params;
+}
+
+function updateDashboard(data) {
+    updateStats(data);
+    updateCharts(data);
+    updateTables(data);
+}
+
+function updateStats(data) {
+  document.getElementById('total-activations').textContent = data.total_activations;
+  document.getElementById('total-versus').textContent = data.total_versus;
+  document.getElementById('most-popular').textContent = 
+      productNames[data.most_popular_sensor] || `Sensor ${data.most_popular_sensor}` || '-';
+  document.getElementById('most-common').textContent = 
+      data.most_common_versus ? formatVersus(data.most_common_versus) : '-';
+}
+
+function updateCharts(data) {
+  if (data.product_stats) updateProductsChart(data.product_stats);
+  if (data.versus_stats) updateVersusChart(data.versus_stats);
+  if (data.hourly_stats) updateHourlyChart(data.hourly_stats);
+  if (data.trend_stats) updateTrendChart(data.trend_stats);
+}
+
+function updateProductsChart(stats) {
+    const ctx = document.getElementById('products-chart').getContext('2d');
+    
+    if (charts.products) charts.products.destroy();
     
     charts.products = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: stats.map(s => `Sensor ${s.sensor_id}`),
+            labels: stats.map(s => productNames[s.sensor_id] || `Sensor ${s.sensor_id}`),
             datasets: [{
                 label: 'Activaciones',
                 data: stats.map(s => s.activations),
-                backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: '#3b82f6',
+                borderColor: '#2563eb',
                 borderWidth: 1
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
+            plugins: {
+                legend: { display: false }
             }
         }
     });
 }
 
-function updateVersusStats(stats) {
-    // Actualizar tabla
-    const tbody = document.querySelector('#versusTable tbody');
-    tbody.innerHTML = '';
-    
-    stats.forEach(stat => {
-        const row = tbody.insertRow();
-        row.innerHTML = `
-            <td>${stat.sensor1_id} vs ${stat.sensor2_id}</td>
-            <td>${stat.count}</td>
-            <td>${formatDate(stat.last_versus)}</td>
-        `;
-    });
-
-    // Actualizar gráfico
-    const ctx = document.getElementById('versusChart').getContext('2d');
-    
-    if (charts.versus) {
-        charts.versus.destroy();
-    }
-    
-    charts.versus = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: stats.map(s => `${s.sensor1_id} vs ${s.sensor2_id}`),
-            datasets: [{
-                label: 'Versus',
-                data: stats.map(s => s.count),
-                backgroundColor: 'rgba(255, 99, 132, 0.5)',
-                borderColor: 'rgba(255, 99, 132, 1)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    });
+function updateVersusChart(stats) {
+  if (!stats || !stats.length) return;
+  const ctx = document.getElementById('versus-chart').getContext('2d');
+  
+  if (charts.versus) charts.versus.destroy();
+  
+  charts.versus = new Chart(ctx, {
+      type: 'bar',
+      data: {
+          labels: stats.map(s => formatVersus(`${s.sensor1_id} vs ${s.sensor2_id}`)),
+          datasets: [{
+              label: 'Versus',
+              data: stats.map(s => s.count),
+              backgroundColor: '#ef4444',
+              borderColor: '#dc2626',
+              borderWidth: 1
+          }]
+      },
+      options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+              legend: { display: false }
+          }
+      }
+  });
 }
 
-function updateHourlyStats(stats) {
-    const ctx = document.getElementById('hourlyChart').getContext('2d');
+function updateHourlyChart(stats) {
+    const ctx = document.getElementById('hourly-chart').getContext('2d');
     
-    if (charts.hourly) {
-        charts.hourly.destroy();
-    }
+    if (charts.hourly) charts.hourly.destroy();
     
     charts.hourly = new Chart(ctx, {
         type: 'line',
         data: {
             labels: Array.from({length: 24}, (_, i) => `${i}:00`),
             datasets: [{
-                label: 'Activaciones por hora',
+                label: 'Activaciones',
                 data: stats,
-                borderColor: 'rgba(75, 192, 192, 1)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                tension: 0.1,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                tension: 0.4,
                 fill: true
             }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
+            maintainAspectRatio: false
         }
     });
 }
 
-function updateGeneralStats(stats) {
-    document.getElementById('totalActivations').textContent = stats.total_activations;
-    document.getElementById('totalVersus').textContent = stats.total_versus;
-    document.getElementById('mostPopular').textContent = stats.most_popular_sensor ? 
-        `Sensor ${stats.most_popular_sensor}` : '-';
-    document.getElementById('mostCommonVersus').textContent = stats.most_common_versus || '-';
+function updateTrendChart(stats) {
+  const ctx = document.getElementById('trend-chart').getContext('2d');
+  
+  if (charts.trend) charts.trend.destroy();
+  
+  charts.trend = new Chart(ctx, {
+      type: 'line',
+      data: {
+          labels: stats.map(s => formatDate(s.date)),
+          datasets: [{
+              label: 'Activaciones',
+              data: stats.map(s => s.count),
+              borderColor: '#8b5cf6',
+              backgroundColor: 'rgba(139, 92, 246, 0.1)',
+              tension: 0.4,
+              fill: true
+          }]
+      },
+      options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+              tooltip: {
+                  mode: 'index',
+                  intersect: false
+              }
+          }
+      }
+  });
+}
+
+function updateTables(data) {
+  if (data.product_stats) updateProductsTable(data.product_stats);
+  if (data.versus_stats) updateVersusTable(data.versus_stats);
+}
+
+
+function updateProductsTable(stats) {
+  if (!stats || !stats.length) return;
+  const tbody = document.getElementById('products-table');
+  tbody.innerHTML = stats.map(stat => `
+      <tr>
+          <td>${productNames[stat.sensor_id] || `Sensor ${stat.sensor_id}`}</td>
+          <td>${stat.activations}</td>
+          <td>${formatDate(stat.last_activation)}</td>
+      </tr>
+  `).join('');
+}
+
+
+
+function updateVersusTable(stats) {
+  if (!stats || !stats.length) return;
+  const tbody = document.getElementById('versus-table');
+  tbody.innerHTML = stats.map(stat => `
+      <tr>
+          <td>${formatVersus(`${stat.sensor1_id} vs ${stat.sensor2_id}`)}</td>
+          <td>${stat.count}</td>
+          <td>${formatDate(stat.last_versus)}</td>
+      </tr>
+  `).join('');
+}
+
+function formatVersus(versusString) {
+  if (!versusString) return '-';
+  return versusString.replace(/(\d+)/g, id => 
+      productNames[id] || `Sensor ${id}`
+  );
 }
 
 function formatDate(dateString) {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleString('es-ES', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+  if (!dateString) return '-';
+  const date = new Date(dateString);
+  return date.toLocaleString('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+  });
+}
+
+function formatDateForInput(date) {
+  return date.toISOString().split('T')[0];
+}
+
+function showLoading() {
+  document.getElementById('loading').style.display = 'flex';
+}
+
+function hideLoading() {
+  document.getElementById('loading').style.display = 'none';
+}
+
+async function handleLogout() {
+  try {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/';
+  } catch (error) {
+      console.error('Error:', error);
+      alert('Error al cerrar sesión');
+  }
 }
