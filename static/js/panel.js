@@ -1,31 +1,48 @@
 // Configuración
-const SENSOR_PINS = [17, 27, 4, 5, 6, 13, 18, 22, 26, 19];
+const SENSOR_PINS = [17, 27, 5, 6, 13, 18, 22, 26, 19];
 let currentUploads = new Set();
 let previewInterval = null;
 
 // Inicialización
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        // Inicializar estado del preview
-        const container = document.getElementById('live-preview-container');
-        if (container) {
-            container.style.display = 'none';
-        }
-        
-        // Inicializar estado del debug
-        const debugEnabled = localStorage.getItem('debugEnabled') === 'true';
-        document.getElementById('debug-status').textContent = 
-            debugEnabled ? 'Desactivar' : 'Activar';
-
         await loadSensorList();
         await loadBackgroundVideos();
         await loadCurrentMode();
+        
+        const debugEnabled = localStorage.getItem('debugEnabled') === 'true';
+        const debugStatus = document.getElementById('debug-status');
+        if (debugStatus) {
+            debugStatus.textContent = debugEnabled ? 'Desactivar' : 'Activar';
+        }
+        
         setupEventListeners();
+        showExtraContentInfo();
     } catch (error) {
         console.error('Error en inicialización:', error);
         showError('Error inicializando el panel');
     }
 });
+
+async function moveVideo(videoId, direction) {
+    try {
+        const response = await fetch('/api/move_background', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ video_id: videoId, direction: direction })
+        });
+
+        if (response.ok) {
+            await loadBackgroundVideos();
+        } else {
+            throw new Error('Error al mover video');
+        }
+    } catch (error) {
+        showError('Error al cambiar el orden del video');
+    }
+}
 
 async function updateSensorName(sensorId, name) {
     try {
@@ -141,23 +158,40 @@ async function loadSensorList() {
     }
 }
 
+
 function createSensorCard(sensorId, videoInfo) {
+    const sensorMapping = {
+        17: '1', 27: '2', 5: '3', 6: '4', 13: '5', 
+        18: '6', 22: '7', 26: '8', 19: '9'
+    };
+
+    // Obtener nombre de fantasía del video si no hay etiqueta
+    const videoName = videoInfo?.video_path ? 
+        videoInfo.video_path.split('/').pop().replace('.mp4', '') : '';
+    const displayName = videoInfo?.etiqueta || videoName || 'Sin nombre';
+
     const card = document.createElement('div');
     card.className = 'sensor-card';
     
     card.innerHTML = `
-        <h3>Sensor ${sensorId}</h3>
-        <div class="sensor-info">
-            <input type="text" 
-                   id="sensor-name-${sensorId}" 
-                   placeholder="Nombre del sensor"
-                   placeholder="Nombre del producto"
-                   value="${videoInfo?.product_name || ''}"
-                   onchange="updateSensorName(${sensorId}, this.value)">
+        <div class="sensor-header">
+            <h3 class="sensor-fixed-name">Sensor ${sensorMapping[sensorId]}</h3>
+            <div class="sensor-name-controls">
+                <input type="text" 
+                    class="sensor-campaign-input"
+                    placeholder="Nombre para campaña/estadísticas"
+                    value="${displayName}"
+                    id="sensor-name-${sensorId}">
+                <button class="button small" 
+                    onclick="updateSensorName(${sensorId}, document.getElementById('sensor-name-${sensorId}').value)">
+                    Guardar Nombre
+                </button>
+            </div>
         </div>
-        <div>
+        <div class="sensor-info">
+            <p class="sensor-label">ID: GPIO${sensorId}</p>
+            <p class="sensor-name-display">Nombre actual: <strong>${displayName}</strong></p>
             <p>Video actual: ${videoInfo ? videoInfo.video_path.split('/').pop() : 'Sin video'}</p>
-            <p>Nombre: ${videoInfo?.product_name || 'Sin nombre'}</p>
             <input type="file" id="video-${sensorId}" accept="video/*">
             <button class="button" onclick="assignVideo(${sensorId})">
                 ${videoInfo ? 'Cambiar Video' : 'Asignar Video'}
@@ -187,6 +221,11 @@ function createSensorCard(sensorId, videoInfo) {
 
 function showExtraContentInfo() {
     const extraContentSection = document.getElementById('extra-content-section');
+    if (!extraContentSection) return;
+    
+    const existingInfo = extraContentSection.querySelector('.extra-content-info');
+    if (existingInfo) existingInfo.remove();
+    
     const infoDiv = document.createElement('div');
     infoDiv.className = 'extra-content-info';
     
@@ -206,7 +245,8 @@ function showExtraContentInfo() {
                 <p>Tipo: ${data.type || 'No definido'}</p>
             `;
             extraContentSection.appendChild(infoDiv);
-        });
+        })
+        .catch(error => console.error('Error cargando contenido extra:', error));
 }
 
 // Funciones de Preview de Video
@@ -385,11 +425,13 @@ function toggleMuteBackground(videoId, muted) {
 }
 
 // Gestión de modos y configuración
+
 async function updateVersusMode() {
     const mode = document.getElementById('versus-mode').value;
     const extraSection = document.getElementById('extra-content-section');
+    const currentModeElement = document.getElementById('current-mode');
     
-    showLoading('Updating mode...');
+    showLoading('Actualizando modo...');
     
     try {
         const response = await fetch('/api/update-versus-mode', {
@@ -399,18 +441,39 @@ async function updateVersusMode() {
         });
         
         if (response.ok) {
-            // Show extra content section for modes 3 and 4
-            extraSection.style.display = ['3', '4'].includes(mode) ? 'block' : 'none';
-            showSuccess(`Mode updated: ${mode} sensors`);
+            if (extraSection) {
+                extraSection.style.display = (mode === '3' || mode === '4') ? 'block' : 'none';
+            }
+            
+            // Actualizar el texto del modo actual
+            if (currentModeElement) {
+                const modeTexts = {
+                    '1': 'Video Individual',
+                    '2': 'Comparación (2 Videos)',
+                    '3': 'Triple con Contenido Extra',
+                    '4': 'Cuádruple'
+                };
+                currentModeElement.innerHTML = `
+                    <div class="current-mode-display">
+                        <strong>Estado Actual:</strong>
+                        <span>Sistema en Modo ${modeTexts[mode] || mode}</span>
+                    </div>
+                `;
+            }
+            
+            showSuccess(`Modo actualizado: ${mode} sensores`);
         } else {
-            throw new Error('Error updating');
+            throw new Error('Error al actualizar');
         }
     } catch (error) {
-        showError('Error updating versus mode');
+        showError('Error al actualizar modo de visualización');
     } finally {
         hideLoading();
     }
 }
+
+
+
 
 async function loadCurrentMode() {
     try {
@@ -421,12 +484,16 @@ async function loadCurrentMode() {
             const versusModeElement = document.getElementById('versus-mode');
             const extraContentSection = document.getElementById('extra-content-section');
 
-            if (currentModeElement && versusModeElement && extraContentSection) {
-                currentModeElement.textContent = `Vitrina en Modo ${data.mode} Sensores`;
+            if (versusModeElement) {
                 versusModeElement.value = data.mode;
-                extraContentSection.style.display = ['3', '4'].includes(data.mode) ? 'block' : 'none';
-            } else {
-                console.error('Elementos HTML no encontrados.');
+            }
+
+            if (currentModeElement) {
+                currentModeElement.textContent = `Vitrina en Modo ${data.mode} Sensores`;
+            }
+
+            if (extraContentSection) {
+                extraContentSection.style.display = ['3', '4'].includes(data.mode.toString()) ? 'block' : 'none';
             }
         }
     } catch (error) {

@@ -30,6 +30,20 @@ def setup_gpio():
 def init_db():
     with sqlite3.connect('vitrina.db') as conn:
         c = conn.cursor()
+
+                # Mapeo correcto de sensores
+        sensor_mapping = {
+            17: 'Sensor 1',
+            27: 'Sensor 2',
+            5: 'Sensor 3',
+            6: 'Sensor 4',
+            13: 'Sensor 5',
+            18: 'Sensor 6',
+            22: 'Sensor 7',
+            26: 'Sensor 8',
+            19: 'Sensor 9'
+        }
+
         # Tablas necesarias
         c.execute('''CREATE TABLE IF NOT EXISTS sensor_videos 
                     (sensor_id INTEGER PRIMARY KEY,
@@ -53,8 +67,10 @@ def init_db():
                      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
         
         c.execute('''CREATE TABLE IF NOT EXISTS etiquetas_sensores
-                    (pin INTEGER PRIMARY KEY,
-                     nombre TEXT NOT NULL)''')
+            (pin INTEGER PRIMARY KEY,
+             nombre TEXT NOT NULL,
+             etiqueta TEXT,
+             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
         c.execute('''CREATE TABLE IF NOT EXISTS system_config
                     (key TEXT PRIMARY KEY,
@@ -65,6 +81,10 @@ def init_db():
                      content_path TEXT,
                      position TEXT,
                      content_type TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS etiquetas_sensores
+                    (pin INTEGER PRIMARY KEY,
+                     nombre TEXT NOT NULL,
+                     etiqueta TEXT)''') 
 
         # Configuración inicial
         c.execute('''INSERT OR REPLACE INTO system_config (key, value) 
@@ -73,17 +93,17 @@ def init_db():
                  ('debug_enabled', 'false')''')
         
         # Insertar nombres predeterminados de sensores
-        c.execute('''INSERT OR IGNORE INTO etiquetas_sensores (pin, nombre) VALUES 
-            (17, 'Sensor 1'), 
-            (27, 'Sensor 2'), 
-            (4, 'Sensor 3'),
-            (5, 'Sensor 4'), 
-            (6, 'Sensor 5'), 
-            (13, 'Sensor 6'),
-            (18, 'Sensor 7'), 
-            (22, 'Sensor 8'), 
-            (26, 'Sensor 9'),
-            (19, 'Sensor 10')''')
+        for pin, nombre in sensor_mapping.items():
+            c.execute('''INSERT OR REPLACE INTO etiquetas_sensores (pin, nombre) 
+                        VALUES (?, ?)''', (pin, nombre))
+        try:
+            c.execute('ALTER TABLE etiquetas_sensores ADD COLUMN etiqueta TEXT')
+            conn.commit()
+        except sqlite3.OperationalError:
+            # La columna ya existe
+            pass
+            
+ 
         
         conn.commit()
 
@@ -129,6 +149,32 @@ def logout():
     session.pop('logged_in', None)
     return jsonify({'success': True})
 
+@app.route('/api/update-sensor-name', methods=['POST'])
+@login_required
+def update_sensor_name():
+    try:
+        data = request.json
+        sensor_id = data.get('sensorId')
+        etiqueta = data.get('name')
+
+        if not sensor_id or not etiqueta:
+            return jsonify({'error': 'Datos incompletos'}), 400
+
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('''UPDATE etiquetas_sensores 
+                        SET etiqueta = ?, 
+                            timestamp = CURRENT_TIMESTAMP 
+                        WHERE pin = ?''', 
+                     (etiqueta, sensor_id))
+            conn.commit()
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error en update_sensor_name: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 
 @app.route('/api/sensor_status/<int:sensor_id>')
 def get_sensor_status(sensor_id):
@@ -136,6 +182,151 @@ def get_sensor_status(sensor_id):
         status = GPIO.input(sensor_id)
         return jsonify({'status': status})
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+@app.route('/api/remove_video/<int:sensor_id>', methods=['DELETE'])
+@login_required
+def remove_sensor_video(sensor_id):
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener ruta del video
+            c.execute('SELECT video_path FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
+            result = c.fetchone()
+            
+            if result:
+                video_path = os.path.join(app.config['UPLOAD_FOLDER'], 
+                                        os.path.basename(result[0]))
+                # Eliminar archivo si existe
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    
+                # Eliminar registro
+                c.execute('DELETE FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
+                conn.commit()
+                return jsonify({'success': True})
+                
+        return jsonify({'error': 'Video no encontrado'}), 404
+        
+    except Exception as e:
+        app.logger.error(f"Error eliminando video: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+@app.route('/api/upload_background', methods=['POST'])
+@login_required
+def upload_background_video():
+    if 'video' not in request.files:
+        return jsonify({'error': 'No se encontró archivo de video'}), 400
+    
+    file = request.files['video']
+    if file.filename == '':
+        return jsonify({'error': 'No se seleccionó ningún archivo'}), 400
+
+    try:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener el máximo orden actual
+            c.execute('SELECT MAX(orden) FROM background_videos')
+            max_orden = c.fetchone()[0] or 0
+            
+            # Insertar el nuevo video
+            c.execute('INSERT INTO background_videos (video_path, orden) VALUES (?, ?)',
+                     (os.path.join('videos', filename), max_orden + 1))
+            conn.commit()
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error subiendo video de fondo: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/move_background/<int:video_id>', methods=['POST'])
+@login_required
+def move_background_video(video_id):  # Añadido el parámetro video_id
+    data = request.json
+    direction = data.get('direction')
+
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener orden actual
+            c.execute('SELECT orden FROM background_videos WHERE id = ?', (video_id,))
+            current_order = c.fetchone()
+            
+            if not current_order:
+                return jsonify({'error': 'Video no encontrado'}), 404
+                
+            current_order = current_order[0]
+            
+            if direction == 'up' and current_order > 1:
+                # Intercambiar con el video anterior
+                c.execute('''
+                    UPDATE background_videos 
+                    SET orden = CASE
+                        WHEN orden = ? THEN ? 
+                        WHEN orden = ? - 1 THEN ?
+                    END
+                    WHERE orden IN (?, ? - 1)
+                ''', (current_order, current_order - 1, current_order, current_order, current_order, current_order))
+            elif direction == 'down':
+                # Intercambiar con el video siguiente
+                c.execute('''
+                    UPDATE background_videos 
+                    SET orden = CASE
+                        WHEN orden = ? THEN ? 
+                        WHEN orden = ? + 1 THEN ?
+                    END
+                    WHERE orden IN (?, ? + 1)
+                ''', (current_order, current_order + 1, current_order, current_order, current_order, current_order))
+            
+            conn.commit()
+            return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error moviendo video: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+    
+@app.route('/api/remove_background/<int:video_id>', methods=['DELETE'])
+@login_required
+def remove_background_video(video_id):
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener ruta del video
+            c.execute('SELECT video_path FROM background_videos WHERE id = ?', (video_id,))
+            result = c.fetchone()
+            
+            if result:
+                video_path = os.path.join(app.config['UPLOAD_FOLDER'], 
+                                        os.path.basename(result[0]))
+                # Eliminar archivo si existe
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    
+                # Eliminar registro
+                c.execute('DELETE FROM background_videos WHERE id = ?', (video_id,))
+                
+                # Reordenar videos restantes
+                c.execute('''
+                    UPDATE background_videos 
+                    SET orden = (SELECT COUNT(*) 
+                               FROM background_videos b2 
+                               WHERE b2.orden <= background_videos.orden 
+                                 AND b2.id != ?)
+                    WHERE id != ?
+                ''', (video_id, video_id))
+                
+                conn.commit()
+                return jsonify({'success': True})
+                
+        return jsonify({'error': 'Video no encontrado'}), 404
+        
+    except Exception as e:
+        app.logger.error(f"Error eliminando video: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/sensor_status')
@@ -263,6 +454,43 @@ def update_versus_mode():
         conn.commit()
     return jsonify({'success': True})
 
+
+@app.route('/api/update-extra-content', methods=['POST'])
+@login_required
+def update_extra_content():
+    if 'content' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+        
+    file = request.files['content']
+    position = request.form.get('position', 'bottom-right')
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    try:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Determinar el tipo de contenido basado en la extensión
+            content_type = 'video' if filename.lower().endswith(('.mp4','.webm','.mov')) else 'image'
+            
+            # Insertar o actualizar el contenido extra
+            c.execute('''INSERT OR REPLACE INTO extra_content 
+                        (content_path, position, content_type) 
+                        VALUES (?, ?, ?)''',
+                     (os.path.join('videos', filename), position, content_type))
+            conn.commit()
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error en update_extra_content: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+
+
 @app.route('/api/get-current-mode')
 def get_current_mode():
     with sqlite3.connect('vitrina.db') as conn:
@@ -296,65 +524,62 @@ def register_sensor_activity(active_sensors, previous_sensors):
                      (sorted_sensors[0], sorted_sensors[1]))
         conn.commit()
 
-
 @app.route('/api/stats')
 def get_stats():
-    date_from = request.args.get('from', '1900-01-01') 
-    date_to = request.args.get('to', '2100-12-31')
+    try:
+        date_from = request.args.get('from', '1900-01-01')
+        date_to = request.args.get('to', '2100-12-31')
 
-    with sqlite3.connect('vitrina.db') as conn:
-        c = conn.cursor()
-        
-        # Estadísticas por producto
-        c.execute('''
-            SELECT a.sensor_id, COUNT(*) as activaciones, MAX(a.timestamp) as last_activation,
-                   es.nombre as nombre_sensor
-            FROM activaciones a
-            LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.pin
-            WHERE a.timestamp BETWEEN ? AND ?
-            GROUP BY a.sensor_id
-            ORDER BY activaciones DESC
-        ''', (date_from, date_to))
-        product_stats = [
-            {
-                'sensor_id': row[0], 
-                'activaciones': row[1], 
-                'ultima_activacion': row[2],
-                'nombre_sensor': row[3]
-            }
-            for row in c.fetchall()
-        ]
-        
-        # Estadísticas de versus
-        c.execute('''
-            SELECT v.sensor1_id, v.sensor2_id, COUNT(*) as count, 
-                   MAX(v.timestamp) as last_versus,
-                   es1.nombre as nombre_sensor1,
-                   es2.nombre as nombre_sensor2  
-            FROM versus v
-            LEFT JOIN etiquetas_sensores es1 ON v.sensor1_id = es1.pin
-            LEFT JOIN etiquetas_sensores es2 ON v.sensor2_id = es2.pin
-            WHERE v.timestamp BETWEEN ? AND ?
-            GROUP BY v.sensor1_id, v.sensor2_id
-            ORDER BY count DESC
-        ''', (date_from, date_to))
-        versus_stats = [
-            {
-                'sensor1_id': row[0], 
-                'sensor2_id': row[1], 
-                'count': row[2], 
-                'ultimo_versus': row[3],
-                'nombre_sensor1': row[4],
-                'nombre_sensor2': row[5]
-            }
-            for row in c.fetchall()
-        ]
-        
-        return jsonify({
-            'product_stats': product_stats,
-            'versus_stats': versus_stats
-        })
-    
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            
+            # Obtener total de activaciones
+            c.execute('''SELECT COUNT(*) FROM activaciones
+                        WHERE timestamp BETWEEN ? AND ?''', (date_from, date_to))
+            total_activations = c.fetchone()[0]
+
+            # Obtener total de versus
+            c.execute('''SELECT COUNT(*) FROM versus
+                        WHERE timestamp BETWEEN ? AND ?''', (date_from, date_to))
+            total_versus = c.fetchone()[0]
+
+            # Obtener producto más popular y sus estadísticas
+            c.execute('''
+                SELECT a.sensor_id, es.nombre, COUNT(*) as count
+                FROM activaciones a
+                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.pin
+                WHERE a.timestamp BETWEEN ? AND ?
+                GROUP BY a.sensor_id, es.nombre
+                ORDER BY count DESC
+            ''', (date_from, date_to))
+            
+            stats = []
+            most_popular = None
+            for row in c.fetchall():
+                sensor_id, nombre, count = row
+                stat = {
+                    'sensor_id': sensor_id,
+                    'nombre': nombre or f'Sensor {sensor_id}',
+                    'activations': count
+                }
+                stats.append(stat)
+                if not most_popular or count > most_popular['count']:
+                    most_popular = {'sensor_id': sensor_id, 'nombre': nombre, 'count': count}
+
+            return jsonify({
+                'total_activations': total_activations,
+                'total_versus': total_versus,
+                'most_popular_product': most_popular['nombre'] if most_popular else None,
+                'product_stats': stats,
+                'versus_stats': [],  # Implementar si es necesario
+                'hourly_stats': [0] * 24  # Implementar si es necesario
+            })
+
+    except Exception as e:
+        app.logger.error(f"Error en stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 
 @app.route('/api/extra-content')
 def get_extra_content():
@@ -378,7 +603,13 @@ def get_extra_content():
                 'type': None
             })
     except Exception as e:
+        app.logger.error(f"Error en get_extra_content: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+
+
+
+
 
 if __name__ == '__main__':
     setup_gpio()

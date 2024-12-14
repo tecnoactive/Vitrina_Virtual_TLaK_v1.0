@@ -47,6 +47,67 @@ async function loadStats() {
     }
 }
 
+function updateSummaryStats(stats) {
+    if (!stats) return;
+    
+    // Actualizar los elementos del resumen
+    const elements = {
+        'total-activations': stats.total_activations || 0,
+        'total-versus': stats.total_versus || 0,
+        'most-popular': stats.most_popular_product || '-',
+        'most-common-versus': stats.most_common_versus || '-'
+    };
+
+    Object.entries(elements).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+        }
+    });
+}
+
+async function loadStats() {
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+
+    try {
+        showLoading();
+        const response = await fetch(`/api/stats?from=${dateFrom}&to=${dateTo}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Error al cargar estadísticas');
+        }
+
+        // Actualizar todas las secciones de estadísticas
+        updateSummaryStats(data);
+        if (data.product_stats) updateProductStats(data.product_stats);
+        if (data.versus_stats) updateVersusStats(data.versus_stats);
+        if (data.hourly_stats) updateHourlyStats(data.hourly_stats);
+
+    } catch (error) {
+        console.error('Error cargando estadísticas:', error);
+        showError('Error al cargar estadísticas');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Función de utilidad para mostrar errores
+function showError(message) {
+    alert(message);
+}
+
+// Función para mostrar/ocultar loading
+function showLoading() {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'flex';
+}
+
+function hideLoading() {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'none';
+}
 
 function updateProductChanges(changes) {
     const timeline = document.querySelector('.product-timeline');
@@ -69,8 +130,9 @@ function updateProductStats(stats) {
     
     stats.forEach(stat => {
         const row = tbody.insertRow();
+        const productName = stat.etiqueta || `Sensor ${stat.sensor_id}`; // Usar etiqueta si existe
         row.innerHTML = `
-            <td>Sensor ${stat.sensor_id}</td>
+            <td>${productName}</td>
             <td>${stat.activations}</td>
             <td>${formatDate(stat.last_activation)}</td>
         `;
