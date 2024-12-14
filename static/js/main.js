@@ -48,14 +48,29 @@ function debugLog(message) {
 }
 
 // Inicialización
+// En la función de inicialización de main.js
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         await checkServerConnection();
+        
+        // Cargar configuración actual
+        const configResponse = await fetch('/api/system-config');
+        const config = await configResponse.json();
+        const currentMode = parseInt(config.versus_mode || '1');
+        
         setupVideoEventListeners();
         debugPanel.style.display = localStorage.getItem('debugEnabled') === 'true' ? 'block' : 'none';
         await initBackgroundPlaylist();
         await initSensorMonitoring();
         await handleAutoplay();
+
+        // Actualizar UI si es necesario
+        const versusMode = document.getElementById('versus-mode');
+        if (versusMode) {
+            versusMode.value = currentMode;
+        }
+
+        debugLog(`Sistema iniciado en modo: ${currentMode}`);
     } catch (error) {
         debugLog(`Error en inicialización: ${error.message}`);
         showConnectionError();
@@ -235,23 +250,48 @@ async function handleSensorChange(activeSensors) {
 
     try {
         const config = await fetch('/api/system-config').then(r => r.json());
-        const versusMode = parseInt(config.versus_mode || '1');
+        const versusMode = parseInt(config.versus_mode);
         debugLog(`Modo actual: ${versusMode}, Sensores activos: ${activeSensors.length}`);
 
         if (activeSensors.length === 0) {
             await switchToBackgroundMode();
-        } else if (versusMode === 1) {
-            // En modo 1, siempre mostrar solo el primer sensor activo
-            await switchToSingleMode(activeSensors[0]);
-        } else if (versusMode === 2 && activeSensors.length >= 2) {
-            await switchToVersusMode(activeSensors[0], activeSensors[1]);
-        } else if (versusMode === 3 && activeSensors.length >= 3) {
-            await switchToTripleMode(activeSensors.slice(0, 3));
-        } else if (versusMode === 4 && activeSensors.length >= 4) {
-            await switchToQuadMode(activeSensors.slice(0, 4));
-        } else {
-            // Si no cumple ninguna condición, mostrar modo single con el primer sensor
-            await switchToSingleMode(activeSensors[0]);
+            return;
+        }
+
+        switch(versusMode) {
+            case 1: // Modo Single
+                await switchToSingleMode(activeSensors[0]);
+                break;
+
+            case 2: // Modo Versus
+                if (activeSensors.length === 1) {
+                    await switchToSingleMode(activeSensors[0]);
+                } else {
+                    await switchToVersusMode(activeSensors[0], activeSensors[1]);
+                }
+                break;
+
+            case 3: // Modo Triple
+                if (activeSensors.length === 1) {
+                    await switchToSingleMode(activeSensors[0]);
+                } else if (activeSensors.length === 2) {
+                    await switchToVersusMode(activeSensors[0], activeSensors[1]);
+                } else if (activeSensors.length >= 3) {
+                    await switchToTripleMode(activeSensors.slice(0, 3));
+                }
+                break;
+
+            case 4: // Modo Quad
+                if (activeSensors.length === 1) {
+                    await switchToSingleMode(activeSensors[0]);
+                } else if (activeSensors.length === 2) {
+                    await switchToVersusMode(activeSensors[0], activeSensors[1]);
+                } else if (activeSensors.length === 3) {
+                    await switchToTripleMode(activeSensors.slice(0, 3));
+                } else if (activeSensors.length >= 4) {
+                    await switchToQuadMode(activeSensors.slice(0, 4));
+                }
+                break;
         }
     } catch (error) {
         debugLog(`Error en cambio de modo: ${error.message}`);
@@ -260,6 +300,7 @@ async function handleSensorChange(activeSensors) {
         isTransitioning = false;
     }
 }
+
 
 
 // Modos de visualización
@@ -366,53 +407,58 @@ async function switchToVersusMode(sensor1, sensor2) {
 async function switchToTripleMode(sensors) {
     debugLog(`Iniciando triple: ${sensors.join(' vs ')}`);
     try {
-        stopAllVideos();
         const [videos, extraContentResponse] = await Promise.all([
             Promise.all(sensors.map(getVideoForSensor)),
             fetch('/api/extra-content').then(r => r.json())
         ]);
 
+        stopAllVideos();
+        
+        // Configurar pantalla
         backgroundPlayer.video.style.display = 'none';
         document.querySelector('.split-screen').style.display = 'none';
-        document.querySelector('.quad-screen').style.display = 'grid';
+        const quadScreen = document.querySelector('.quad-screen');
+        quadScreen.style.display = 'grid';
 
-        // Mapear posiciones a índices
-        const positionMap = {
-            'top-left': 0,
-            'top-right': 1,
-            'bottom-left': 2,
-            'bottom-right': 3
-        };
-
-        // Obtener el índice para el contenido extra
-        const extraContentIndex = positionMap[extraContentResponse.position] || 3;
-        const videoElements = ['quad1', 'quad2', 'quad3', 'quad4'].map(id => document.getElementById(id));
-        
-        // Limpiar todos los videos
-        videoElements.forEach(v => {
-            v.style.display = 'none';
-            v.src = '';
+        // Limpiar todos los videos primero
+        ['quad1', 'quad2', 'quad3', 'quad4'].forEach(id => {
+            const video = document.getElementById(id);
+            video.style.display = 'none';
+            video.src = '';
         });
 
-        // Asignar videos principales evitando la posición del contenido extra
-        let videoIndex = 0;
-        for (let i = 0; i < 4; i++) {
-            if (i === extraContentIndex) continue;
-            if (videoIndex < videos.length) {
-                videoElements[i].src = `/static/${videos[videoIndex].video_path}`;
-                videoElements[i].style.display = 'block';
-                await tryPlayVideo(videoElements[i]);
-                videoIndex++;
-            }
+        // Configurar videos principales
+        for (let i = 0; i < 3; i++) {
+            const video = document.getElementById(`quad${i+1}`);
+            video.src = `/static/${videos[i].video_path}`;
+            video.style.display = 'block';
+            video.muted = false;
+            video.loop = true;
+            await tryPlayVideo(video);
         }
 
         // Configurar contenido extra
+        const extraContainer = document.getElementById('extra-content');
+        const extraVideo = document.getElementById('quad4');
+
         if (extraContentResponse.path) {
-            const extraVideo = videoElements[extraContentIndex];
+            const position = extraContentResponse.position || 'bottom-right';
             if (extraContentResponse.type === 'video') {
-                extraVideo.src = `/static/${extraContentResponse.path}`;
+                extraContainer.style.display = 'none';
                 extraVideo.style.display = 'block';
+                extraVideo.src = `/static/${extraContentResponse.path}`;
+                extraVideo.muted = true;
+                extraVideo.loop = true;
                 await tryPlayVideo(extraVideo);
+            } else {
+                extraVideo.style.display = 'none';
+                extraContainer.style.display = 'block';
+                extraContainer.style.backgroundImage = `url(/static/${extraContentResponse.path})`;
+                extraContainer.style.backgroundSize = 'cover';
+                extraContainer.style.backgroundPosition = 'center';
+                // Aplicar posición
+                const [vertical, horizontal] = position.split('-');
+                extraContainer.style.gridArea = `${vertical} / ${horizontal}`;
             }
         }
 

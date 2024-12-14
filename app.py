@@ -87,7 +87,7 @@ def init_db():
                      etiqueta TEXT)''') 
 
         # Configuración inicial
-        c.execute('''INSERT OR REPLACE INTO system_config (key, value) 
+        c.execute('''INSERT OR IGNORE INTO system_config (key, value) 
                  VALUES 
                  ('versus_mode', '1'),
                  ('debug_enabled', 'false')''')
@@ -243,51 +243,6 @@ def upload_background_video():
         app.logger.error(f"Error subiendo video de fondo: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/api/move_background/<int:video_id>', methods=['POST'])
-@login_required
-def move_background_video(video_id):  # Añadido el parámetro video_id
-    data = request.json
-    direction = data.get('direction')
-
-    try:
-        with sqlite3.connect('vitrina.db') as conn:
-            c = conn.cursor()
-            # Obtener orden actual
-            c.execute('SELECT orden FROM background_videos WHERE id = ?', (video_id,))
-            current_order = c.fetchone()
-            
-            if not current_order:
-                return jsonify({'error': 'Video no encontrado'}), 404
-                
-            current_order = current_order[0]
-            
-            if direction == 'up' and current_order > 1:
-                # Intercambiar con el video anterior
-                c.execute('''
-                    UPDATE background_videos 
-                    SET orden = CASE
-                        WHEN orden = ? THEN ? 
-                        WHEN orden = ? - 1 THEN ?
-                    END
-                    WHERE orden IN (?, ? - 1)
-                ''', (current_order, current_order - 1, current_order, current_order, current_order, current_order))
-            elif direction == 'down':
-                # Intercambiar con el video siguiente
-                c.execute('''
-                    UPDATE background_videos 
-                    SET orden = CASE
-                        WHEN orden = ? THEN ? 
-                        WHEN orden = ? + 1 THEN ?
-                    END
-                    WHERE orden IN (?, ? + 1)
-                ''', (current_order, current_order + 1, current_order, current_order, current_order, current_order))
-            
-            conn.commit()
-            return jsonify({'success': True})
-    except Exception as e:
-        app.logger.error(f"Error moviendo video: {str(e)}")
-        return jsonify({'error': str(e)}), 500
     
     
 @app.route('/api/remove_background/<int:video_id>', methods=['DELETE'])
@@ -506,6 +461,7 @@ def get_system_config():
             c = conn.cursor()
             c.execute('SELECT key, value FROM system_config')
             config = dict(c.fetchall())
+            app.logger.info(f"Configuración actual del sistema: {config}")
             return jsonify(config)
     except Exception as e:
         app.logger.error(f"Error en system_config: {str(e)}")
@@ -524,62 +480,217 @@ def register_sensor_activity(active_sensors, previous_sensors):
                      (sorted_sensors[0], sorted_sensors[1]))
         conn.commit()
 
+
 @app.route('/api/stats')
 def get_stats():
     try:
         date_from = request.args.get('from', '1900-01-01')
         date_to = request.args.get('to', '2100-12-31')
 
+        app.logger.info(f"Solicitando estadísticas desde {date_from} hasta {date_to}")
+
         with sqlite3.connect('vitrina.db') as conn:
             c = conn.cursor()
             
-            # Obtener total de activaciones
-            c.execute('''SELECT COUNT(*) FROM activaciones
-                        WHERE timestamp BETWEEN ? AND ?''', (date_from, date_to))
-            total_activations = c.fetchone()[0]
-
-            # Obtener total de versus
-            c.execute('''SELECT COUNT(*) FROM versus
-                        WHERE timestamp BETWEEN ? AND ?''', (date_from, date_to))
-            total_versus = c.fetchone()[0]
-
-            # Obtener producto más popular y sus estadísticas
+            # Total de activaciones
             c.execute('''
-                SELECT a.sensor_id, es.nombre, COUNT(*) as count
+                SELECT COUNT(*) 
+                FROM activaciones 
+                WHERE timestamp BETWEEN ? AND ?
+            ''', (date_from, date_to))
+            total_activations = c.fetchone()[0]
+            
+            # Total de versus
+            c.execute('''
+                SELECT COUNT(*) 
+                FROM versus 
+                WHERE timestamp BETWEEN ? AND ?
+            ''', (date_from, date_to))
+            total_versus = c.fetchone()[0]
+            
+            # Producto más popular y sus estadísticas
+            c.execute('''
+                SELECT 
+                    a.sensor_id,
+                    COALESCE(es.etiqueta, es.nombre) as nombre,
+                    COUNT(*) as count
                 FROM activaciones a
                 LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.pin
                 WHERE a.timestamp BETWEEN ? AND ?
-                GROUP BY a.sensor_id, es.nombre
+                GROUP BY a.sensor_id
+                ORDER BY count DESC
+                LIMIT 1
+            ''', (date_from, date_to))
+            most_popular = c.fetchone()
+            
+            # Estadísticas por producto
+            c.execute('''
+                SELECT 
+                    a.sensor_id,
+                    COALESCE(es.etiqueta, es.nombre) as nombre,
+                    COUNT(*) as activations,
+                    MAX(a.timestamp) as last_activation
+                FROM activaciones a
+                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.pin
+                WHERE a.timestamp BETWEEN ? AND ?
+                GROUP BY a.sensor_id
+                ORDER BY activations DESC
+            ''', (date_from, date_to))
+            
+            product_stats = [{
+                'sensor_id': row[0],
+                'nombre': row[1] or f'Sensor {row[0]}',
+                'activations': row[2],
+                'last_activation': row[3]
+            } for row in c.fetchall()]
+            
+            # Estadísticas de versus
+            c.execute('''
+                SELECT 
+                    v.sensor1_id,
+                    v.sensor2_id,
+                    COALESCE(es1.etiqueta, es1.nombre) as nombre1,
+                    COALESCE(es2.etiqueta, es2.nombre) as nombre2,
+                    COUNT(*) as count,
+                    MAX(v.timestamp) as last_versus
+                FROM versus v
+                LEFT JOIN etiquetas_sensores es1 ON v.sensor1_id = es1.pin
+                LEFT JOIN etiquetas_sensores es2 ON v.sensor2_id = es2.pin
+                WHERE v.timestamp BETWEEN ? AND ?
+                GROUP BY v.sensor1_id, v.sensor2_id
                 ORDER BY count DESC
             ''', (date_from, date_to))
             
-            stats = []
-            most_popular = None
-            for row in c.fetchall():
-                sensor_id, nombre, count = row
-                stat = {
-                    'sensor_id': sensor_id,
-                    'nombre': nombre or f'Sensor {sensor_id}',
-                    'activations': count
-                }
-                stats.append(stat)
-                if not most_popular or count > most_popular['count']:
-                    most_popular = {'sensor_id': sensor_id, 'nombre': nombre, 'count': count}
+            versus_stats = [{
+                'sensor1_id': row[0],
+                'sensor2_id': row[1],
+                'nombre1': row[2] or f'Sensor {row[0]}',
+                'nombre2': row[3] or f'Sensor {row[1]}',
+                'count': row[4],
+                'last_versus': row[5]
+            } for row in c.fetchall()]
+            
+            # Estadísticas por hora
+            c.execute('''
+                SELECT strftime('%H', timestamp) as hour, COUNT(*) as count
+                FROM activaciones
+                WHERE timestamp BETWEEN ? AND ?
+                GROUP BY hour
+                ORDER BY hour
+            ''', (date_from, date_to))
+            
+            hourly_data = dict(c.fetchall())
+            hourly_stats = [int(hourly_data.get(str(h).zfill(2), 0)) for h in range(24)]
+            
+            # Historial de asignaciones
+            c.execute('''
+                SELECT 
+                    sv.sensor_id,
+                    COALESCE(es.etiqueta, es.nombre) as nombre,
+                    sv.video_path,
+                    MIN(a.timestamp) as fecha_inicio,
+                    MAX(a.timestamp) as fecha_fin,
+                    COUNT(*) as total_activaciones,
+                    ROUND(CAST(COUNT(*) AS FLOAT) / (
+                        JULIANDAY(MAX(a.timestamp)) - JULIANDAY(MIN(a.timestamp)) + 1
+                    ), 2) as promedio_diario
+                FROM sensor_videos sv
+                LEFT JOIN etiquetas_sensores es ON sv.sensor_id = es.pin
+                LEFT JOIN activaciones a ON sv.sensor_id = a.sensor_id
+                WHERE a.timestamp BETWEEN ? AND ?
+                GROUP BY sv.sensor_id, sv.video_path
+                ORDER BY fecha_inicio DESC
+                LIMIT 10
+            ''', (date_from, date_to))
+            
+            history = [{
+                'sensor_id': row[0],
+                'nombre': row[1] or f'Sensor {row[0]}',
+                'video_path': row[2],
+                'fecha_inicio': row[3],
+                'fecha_fin': row[4],
+                'total_activaciones': row[5],
+                'promedio_diario': row[6]
+            } for row in c.fetchall()]
 
-            return jsonify({
+            response_data = {
                 'total_activations': total_activations,
                 'total_versus': total_versus,
-                'most_popular_product': most_popular['nombre'] if most_popular else None,
-                'product_stats': stats,
-                'versus_stats': [],  # Implementar si es necesario
-                'hourly_stats': [0] * 24  # Implementar si es necesario
-            })
+                'most_popular_product': most_popular[1] if most_popular else None,
+                'most_common_versus': f"{versus_stats[0]['nombre1']} vs {versus_stats[0]['nombre2']}" if versus_stats else None,
+                'product_stats': product_stats,
+                'versus_stats': versus_stats,
+                'hourly_stats': hourly_stats,
+                'history': history
+            }
+            
+            app.logger.info(f"Datos a enviar: {response_data}")
+            return jsonify(response_data)
 
     except Exception as e:
         app.logger.error(f"Error en stats: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 
+    
+@app.route('/api/toggle-debug', methods=['POST'])
+@login_required
+def toggle_debug():
+    try:
+        data = request.json
+        enabled = data.get('enabled', False)
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('UPDATE system_config SET value = ? WHERE key = ?', 
+                     (str(enabled).lower(), 'debug_enabled'))
+            conn.commit()
+        
+        return jsonify({'success': True, 'debug_enabled': enabled})
+    except Exception as e:
+        app.logger.error(f"Error en toggle_debug: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+
+@app.route('/api/move_background', methods=['POST'])
+@login_required
+def move_background_video():
+    try:
+        data = request.json
+        video_id = data.get('video_id')
+        direction = data.get('direction')
+        
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            # Obtener orden actual
+            c.execute('SELECT orden FROM background_videos WHERE id = ?', (video_id,))
+            current_order = c.fetchone()[0]
+            
+            if direction == 'up' and current_order > 1:
+                # Intercambiar con el video anterior
+                c.execute('''
+                    UPDATE background_videos 
+                    SET orden = CASE
+                        WHEN orden = ? THEN orden - 1
+                        WHEN orden = ? - 1 THEN orden + 1
+                    END
+                    WHERE orden IN (?, ? - 1)
+                ''', (current_order, current_order, current_order, current_order))
+            elif direction == 'down':
+                c.execute('''
+                    UPDATE background_videos 
+                    SET orden = CASE
+                        WHEN orden = ? THEN orden + 1
+                        WHEN orden = ? + 1 THEN orden - 1
+                    END
+                    WHERE orden IN (?, ? + 1)
+                ''', (current_order, current_order, current_order, current_order))
+            
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error moviendo video: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/extra-content')
 def get_extra_content():

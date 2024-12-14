@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Vitrina Digital</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #64748b;
+            --success: #10b981;
+            --background: #f8fafc;
+            --card: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--background);
+            color: #334155;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 0.75rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+
+        .filters {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 2rem;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .button:hover {
+            background: #1d4ed8;
+        }
+
+        .stat-box {
+            text-align: center;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            background: linear-gradient(135deg, var(--primary), #1d4ed8);
+            color: white;
+        }
+
+        .stat-box h3 {
+            font-size: 0.875rem;
+            margin: 0;
+            opacity: 0.9;
+        }
+
+        .stat-box .value {
+            font-size: 2rem;
+            font-weight: 600;
+            margin: 0.5rem 0;
+        }
+
+        .chart-container {
+            height: 300px;
+            position: relative;
+            margin-top: 1rem;
+        }
+
+        .history-section {
+            margin-top: 2rem;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .history-table th,
+        .history-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .history-table th {
+            background: #f1f5f9;
+            font-weight: 500;
+        }
+
+        .history-table tr:hover {
+            background: #f8fafc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="filters">
+            <div class="filter-group">
+                <select id="period-select" onchange="changePeriod(this.value)">
+                    <option value="current-month">Mes Actual</option>
+                    <option value="last-month">Mes Anterior</option>
+                    <option value="year">Este Año</option>
+                    <option value="custom">Personalizado</option>
+                </select>
+            </div>
+            <div id="custom-dates" style="display: none;">
+                <input type="date" id="date-from">
+                <input type="date" id="date-to">
+                <button class="button" onclick="applyCustomDates()">Aplicar</button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <!-- Estadísticas generales -->
+            <div class="card">
+                <div class="stat-box">
+                    <h3>Total Activaciones</h3>
+                    <div id="total-activations" class="value">0</div>
+                </div>
+            </div>
+            <!-- Más cards de estadísticas -->
+        </div>
+
+        <!-- Sección de historial -->
+        <div class="history-section card">
+            <h2>Historial de Asignaciones</h2>
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>Sensor</th>
+                        <th>Producto</th>
+                        <th>Fecha Inicio</th>
+                        <th>Fecha Fin</th>
+                        <th>Total Activaciones</th>
+                        <th>Promedio Diario</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table">
+                    <!-- Se llena dinámicamente -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
