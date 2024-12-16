@@ -1,19 +1,19 @@
 
 // debe solicitarse al servidor y almacenarse en la Raspi Local (solo una vez)
 // y luego enviarlo al servidor cada minuto
-const DEVICE_ID = "nEans3"
 
 function beacon() {
+    const DEVICE_ID = "nEans3"
     const url = "https://clientes.tecnoactive.cl/liftandlearn2/api.php?action=device_beacon"
-    const data = { device_id: DEVICE_ID}
+    const data = new URLSearchParams({ device_id: DEVICE_ID })
 
     function sendBeacon() {
         fetch(url, {
             method: "POST",
             headers: {
-                "Content-Type": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
             },
-            body: JSON.stringify(data),
+            body: data.toString(),
         })
         .then(response => {
             if (!response.ok) {
