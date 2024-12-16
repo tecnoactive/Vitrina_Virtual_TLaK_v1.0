@@ -7,6 +7,8 @@ from functools import wraps
 import time
 from werkzeug.utils import secure_filename
 import functools
+import psutil # Para información del sistema
+import subprocess # Para ejecutar comandos del sistema
 
 app = Flask(__name__)
 app.secret_key = 'admin'
@@ -173,7 +175,10 @@ def update_sensor_name():
     except Exception as e:
         app.logger.error(f"Error en update_sensor_name: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
+    
+@app.route('/monitor')
+def monitor():
+    return render_template('monitor.html') # Renderizar monitor.html
 
 
 @app.route('/api/sensor_status/<int:sensor_id>')
@@ -718,7 +723,53 @@ def get_extra_content():
         return jsonify({'error': str(e)}), 500
 
 
+#monitor de recursos 
+@app.route('/api/system_info')
+def system_info():
+    cpu_percent = psutil.cpu_percent()
+    mem = psutil.virtual_memory()
+    mem_percent = mem.percent
+    disk = psutil.disk_usage('/')
+    disk_percent = disk.percent
+    temp = get_cpu_temperature()
+    uptime = get_uptime()
+    swap = psutil.swap_memory()
+    swap_percent = swap.percent
 
+    return jsonify({
+        'cpu_percent': cpu_percent,
+        'mem_percent': mem_percent,
+        'disk_percent': disk_percent,
+        'cpu_temp': temp,
+        'uptime': uptime,
+        'swap_percent': swap_percent
+    })
+
+def get_cpu_temperature():
+    try:
+        # Comando para obtener la temperatura en Raspberry Pi
+        output = subprocess.check_output(['vcgencmd', 'measure_temp']).decode('utf-8')
+        temp_str = output.replace("temp=", "").replace("'C\n", "")
+        return float(temp_str)
+    except FileNotFoundError:
+        return "N/A"
+    except subprocess.CalledProcessError:
+        return "N/A"
+    except ValueError:
+        return "N/A"
+
+
+def get_uptime():
+    try:
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
+            days = int(uptime_seconds // (60 * 60 * 24))
+            hours = int((uptime_seconds % (60 * 60 * 24)) // (60 * 60))
+            minutes = int((uptime_seconds % (60 * 60)) // 60)
+
+            return f"{days} días, {hours} horas, {minutes} minutos"
+    except FileNotFoundError:
+        return "N/A"
 
 
 

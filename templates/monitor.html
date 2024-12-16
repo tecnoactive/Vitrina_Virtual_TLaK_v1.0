@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Monitor de Raspberry Pi</title>
+</head>
+<body>
+    <h1>Estado del Sistema</h1>
+    <div id="system-info">
+        <p>Cargando...</p>
+    </div>
+
+    <script>
+        function updateSystemInfo() {
+            fetch('/api/system_info')
+                .then(response => response.json())
+                .then(data => {
+                    let infoDiv = document.getElementById('system-info');
+                    infoDiv.innerHTML = `
+                        <p>Uso de CPU: ${data.cpu_percent}%</p>
+                        <p>Uso de RAM: ${data.mem_percent}%</p>
+                        <p>Uso de Disco: ${data.disk_percent}%</p>
+                        <p>Temperatura CPU: ${data.cpu_temp}°C</p>
+                        <p>Tiempo encendido: ${data.uptime}</p>
+                        <p>Uso de Swap: ${data.swap_percent}%</p>
+                    `;
+                });
+        }
+
+        setInterval(updateSystemInfo, 1000); // Actualizar cada segundo
+        updateSystemInfo(); // Llamar una vez al cargar la página
+    </script>
+</body>
+</html>
