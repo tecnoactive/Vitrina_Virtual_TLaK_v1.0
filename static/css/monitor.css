@@ -1,0 +1,151 @@
+.monitor-container .bg-white { 
+    background-color: white;
+}
+
+.monitor-container .p-6 { 
+    padding: 1.5rem; 
+}
+
+.monitor-container .rounded-lg { 
+    border-radius: 0.5rem;
+}
+
+.monitor-container .shadow-lg {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.monitor-container .border {
+    border: 1px solid #e5e7eb;
+}
+
+.monitor-container .hover\:shadow-xl:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15); 
+}
+
+.monitor-container .transition-shadow {
+    transition: box-shadow 0.2s ease-in-out;
+}
+
+.monitor-container .flex {
+    display: flex;
+}
+
+.monitor-container .justify-between {
+    justify-content: space-between;
+}
+
+.monitor-container .items-center {
+    align-items: center;
+}
+
+.monitor-container .text-gray-600 {
+    color: #71717a;
+}
+
+.monitor-container .text-sm {
+    font-size: 0.875rem; /* 14px */
+}
+
+.monitor-container .font-medium {
+    font-weight: 500;
+}
+
+.monitor-container .text-3xl {
+    font-size: 1.875rem; /* 30px */
+}
+
+.monitor-container .font-bold {
+    font-weight: 700;
+}
+
+.monitor-container .text-gray-800 {
+    color: #1f2937;
+}
+
+.monitor-container .bg-blue-500 {
+    background-color: #3b82f6;
+}
+
+.monitor-container .bg-green-500 {
+    background-color: #10b981;
+}
+
+.monitor-container .bg-red-500 {
+    background-color: #ef4444;
+}
+
+.monitor-container .bg-purple-500 {
+    background-color: #8b5cf6;
+}
+
+.monitor-container .bg-orange-500 {
+    background-color: #f97316;
+}
+
+.monitor-container .bg-teal-500 {
+    background-color: #14b8a6;
+}
+
+.monitor-container .rounded-full {
+    border-radius: 9999px;
+}
+
+.monitor-container .p-3 {
+    padding: 0.75rem;
+}
+
+.monitor-container .text-2xl {
+    font-size: 1.5rem; /* 24px */
+}
+
+.monitor-container .shadow-md {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+}
+
+.monitor-container .grid {
+    display: grid;
+}
+
+.monitor-container .grid-cols-1 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+    .monitor-container .md\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1024px) {
+    .monitor-container .lg\:grid-cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.monitor-container .gap-6 {
+    gap: 1.5rem;
+}
+
+.monitor-container .mb-6 {
+    margin-bottom: 1.5rem;
+}
+
+.monitor-container .text-lg {
+    font-size: 1.125rem; /* 18px */
+}
+
+.monitor-container .font-semibold {
+    font-weight: 600;
+}
+
+.monitor-container .mb-4 {
+    margin-bottom: 1rem;
+}
+
+.monitor-container .h-64 {
+    height: 16rem;
+}
+
+.monitor-container .w-full {
+    width: 80%;
+}

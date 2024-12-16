@@ -4,311 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel de Control - Vitrina Digital</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background: #f5f5f5;
-            min-height: 100vh;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .nav-menu {
-            background: #333;
-            padding: 15px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: white;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .nav-menu a {
-            color: white;
-            text-decoration: none;
-            margin-right: 20px;
-            padding: 8px 15px;
-            border-radius: 4px;
-            transition: background-color 0.3s;
-        }
-
-        .nav-menu a:hover {
-            background: #444;
-        }
-        .current-mode-display {
-    background: #f8f9fa;
-    padding: 10px;
-    border-radius: 4px;
-    margin-top: 10px;
-    border: 1px solid #dee2e6;
-}
-
-.current-mode-display strong {
-    color: #495057;
-    margin-right: 8px;
-}
-.sensor-name-input {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin-bottom: 10px;
-    font-size: 14px;
-}
-.sensor-header {
-    margin-bottom: 15px;
-}
-
-.sensor-title-input {
-    font-size: 18px;
-    font-weight: bold;
-    padding: 8px;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    width: 100%;
-    background: transparent;
-}
-
-.sensor-fixed-name {
-    margin: 0 0 10px 0;
-    color: #333;
-    font-size: 18px;
-}
-
-.sensor-campaign-input {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    margin-bottom: 15px;
-}
-.sensor-name-controls {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.button.small {
-    padding: 5px 10px;
-    font-size: 12px;
-}
-
-.sensor-name-display {
-    color: #666;
-    margin: 5px 0;
-}
-
-.sensor-name-display strong {
-    color: #333;
-    font-weight: 500;
-}
-
-.sensor-campaign-input::placeholder {
-    color: #999;
-    font-style: italic;
-}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/panel.css') }}">
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 
-.sensor-title-input:hover, .sensor-title-input:focus {
-    border-color: #ddd;
-    background: white;
-    outline: none;
-}
-.sensor-label {
-    color: #666;
-    font-size: 12px;
-    margin-bottom: 8px;
-}
-.current-mode-display span {
-    color: #0d6efd;
-    font-weight: 500;
-}
-        .card {
-            background: white;
-            padding: 25px;
-            margin-bottom: 25px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .sensor-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 25px;
-            margin-top: 20px;
-        }
-
-        .sensor-card {
-            background: #ffffff;
-            padding: 20px;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-
-        .sensor-info {
-            margin-top: 15px;
-        }
-
-        .button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.3s, transform 0.1s;
-            font-weight: 500;
-        }
-
-        .button:hover {
-            background: #0056b3;
-            transform: translateY(-1px);
-        }
-
-        .button.delete {
-            background: #dc3545;
-        }
-
-        .button.preview {
-            background: #28a745;
-            margin: 0 10px;
-        }
-
-        /* Modal y Preview */
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.85);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            position: relative;
-            width: 90%;
-            max-width: 1200px;
-            background: #000;
-            padding: 20px;
-            border-radius: 12px;
-        }
-
-        .modal-content video {
-            width: 100%;
-            max-height: 80vh;
-            border-radius: 8px;
-        }
-
-        .close {
-            position: absolute;
-            top: -40px;
-            right: -40px;
-            color: white;
-            font-size: 36px;
-            cursor: pointer;
-        }
-
-        /* Loading */
-        .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.6);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .loading-content {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            text-align: center;
-        }
-
-        /* Sistema */
-        .system-controls {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 25px;
-        }
-
-        .control-group {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-        }
-
-        /* Playlist */
-        .playlist-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px;
-            margin-bottom: 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-        }
-
-        .playlist-controls {
-            display: flex;
-            gap: 10px;
-        }
-
-        select, input[type="file"] {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .extra-content-controls {
-    margin-top: 15px;
-}
-.logo {
-            height: 40px;
-        }
-.extra-content-controls select,
-.extra-content-controls input[type="file"] {
-    margin-bottom: 10px;
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-}
-
-.extra-content-info {
-    margin-top: 15px;
-    padding: 10px;
-    background: #f8f9fa;
-    border-radius: 4px;
-    border: 1px solid #e0e0e0;
-}
-
-.extra-content-info p {
-    margin: 5px 0;
-    color: #666;
-}
-    </style>
 </head>
 <body>
     <!-- Loading Overlay -->
@@ -399,8 +101,207 @@
             <video id="preview-video" controls></video>
         </div>
     </div>
-
+    <div class="card container"> 
+        <div class="monitor-container"> 
+    
+            <h2>Monitor del Sistema</h2>
+            <link rel="stylesheet" href="{{ url_for('static', filename='css/monitor.css') }}"> 
+    
+            <div id="system-monitor">
+            </div>
+        </div>
+    </div>
     <!-- Scripts -->
-    <script src="/static/js/panel.js"></script>
+<!-- Scripts -->
+<script src="/static/js/panel.js"></script>
+
+
+<script type="text/babel">
+    const { useState, useEffect } = React;
+    
+    const SystemMonitor = () => {
+     const [systemInfo, setSystemInfo] = useState({
+       cpu_percent: 0,
+       mem_percent: 0,
+       cpu_temp: 0,
+       disk_percent: 0,
+       uptime: '',
+       swap_percent: 0
+     });
+    
+     useEffect(() => {
+       const ctx = document.getElementById('performanceChart');
+       const chart = new Chart(ctx, {
+         type: 'line',
+         data: {
+           labels: [],
+           datasets: [{
+             label: 'CPU',
+             data: [],
+             borderColor: '#3b82f6',
+             backgroundColor: 'rgba(59, 130, 246, 0.1)',
+             tension: 0.3,
+             fill: true
+           }, {
+             label: 'Memoria',
+             data: [],
+             borderColor: '#10b981',
+             backgroundColor: 'rgba(16, 185, 129, 0.1)',
+             tension: 0.3,
+             fill: true
+           }]
+         },
+         options: {
+           responsive: true,
+           maintainAspectRatio: true,
+           animation: false,
+           plugins: {
+             legend: {
+               position: 'top',
+               labels: {
+                 usePointStyle: true,
+                 padding: 15,
+                 font: {
+                   family: "'Inter', sans-serif",
+                   size: 12
+                 }
+               }
+             }
+           },
+           scales: {
+             y: {
+               beginAtZero: true,
+               max: 100,
+               grid: {
+                 color: 'rgba(0,0,0,0.05)'
+               },
+               ticks: {
+                 callback: value => value + '%',
+                 font: {
+                   family: "'Inter', sans-serif",
+                   size: 11
+                 }
+               }
+             },
+             x: {
+               grid: {
+                 display: false
+               },
+               ticks: {
+                 font: {
+                   family: "'Inter', sans-serif",
+                   size: 11
+                 }
+               }
+             }
+           }
+         }
+       });
+    
+       const updateInfo = async () => {
+         try {
+           const response = await fetch('/api/system_info');
+           const data = await response.json();
+           setSystemInfo(data);
+           
+           const time = new Date().toLocaleTimeString();
+           chart.data.labels.push(time);
+           chart.data.datasets[0].data.push(data.cpu_percent);
+           chart.data.datasets[1].data.push(data.mem_percent);
+           
+           if (chart.data.labels.length > 20) {
+             chart.data.labels.shift();
+             chart.data.datasets.forEach(dataset => dataset.data.shift());
+           }
+           
+           chart.update('none');
+         } catch (error) {
+           console.error('Error:', error);
+         }
+       };
+    
+       updateInfo();
+       const interval = setInterval(updateInfo, 5000);
+       return () => {
+         clearInterval(interval);
+         chart.destroy();
+       };
+     }, []);
+    
+     const StatCard = ({ title, value, icon, color }) => (
+       <div className="bg-white rounded-lg p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow">
+         <div className="flex justify-between items-center">
+           <div>
+             <h3 className="text-gray-600 text-sm font-medium">{title}</h3>
+             <p className="text-3xl font-bold mt-2 text-gray-800">{value}</p>
+           </div>
+           <div className={`${color} rounded-full p-3 text-2xl shadow-md`}>
+             {icon}
+           </div>
+         </div>
+       </div>
+     );
+    
+     return (
+       <div className="p-6 max-w-7xl mx-auto">
+         <h2 className="text-2xl font-bold mb-6 text-gray-800">Monitor del Sistema</h2>
+         
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+           <StatCard 
+             title="CPU" 
+             value={`${systemInfo.cpu_percent}%`} 
+             icon="💻"
+             color="bg-blue-500"
+           />
+           <StatCard 
+             title="Memoria" 
+             value={`${systemInfo.mem_percent}%`} 
+             icon="📊"
+             color="bg-green-500"
+           />
+           <StatCard 
+             title="Temperatura" 
+             value={`${systemInfo.cpu_temp}°C`} 
+             icon="🌡️"
+             color="bg-red-500"
+           />
+           <StatCard 
+             title="Disco" 
+             value={`${systemInfo.disk_percent}%`} 
+             icon="💾"
+             color="bg-purple-500"
+           />
+           <StatCard 
+             title="Tiempo Encendido" 
+             value={systemInfo.uptime} 
+             icon="⏱️"
+             color="bg-orange-500"
+           />
+           <StatCard 
+             title="Memoria Swap" 
+             value={`${systemInfo.swap_percent}%`} 
+             icon="🔄"
+             color="bg-teal-500"
+           />
+         </div>
+    
+         <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-100">
+           <h3 className="text-lg font-semibold mb-4 text-gray-800">Historial de Rendimiento</h3>
+           <div className="h-64 w-full">
+             <canvas id="performanceChart"></canvas>
+           </div>
+         </div>
+       </div>
+     );
+    };
+    
+    ReactDOM.render(
+     <SystemMonitor />,
+     document.getElementById('system-monitor')
+    );
+    </script>
+
+
+</script>
 </body>
 </html>
