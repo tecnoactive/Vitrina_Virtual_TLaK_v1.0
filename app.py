@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 import functools
 import psutil # Para información del sistema
 import subprocess # Para ejecutar comandos del sistema
+from datetime import timedelta
 
 app = Flask(__name__)
 app.secret_key = 'admin'
@@ -22,12 +23,12 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Variables globales
 previous_active_sensors = []
+current_mode = 1  # Valor por defecto
 
 def setup_gpio():
     GPIO.setmode(GPIO.BCM)
     for pin in SENSOR_PINS:
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-
 
 def init_db():
     with sqlite3.connect('vitrina.db') as conn:
@@ -69,9 +70,10 @@ def init_db():
                      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
         
         c.execute('''CREATE TABLE IF NOT EXISTS etiquetas_sensores
-            (pin INTEGER PRIMARY KEY,
-             nombre TEXT NOT NULL,
-             etiqueta TEXT,
+            (gpio_pin INTEGER PRIMARY KEY,
+             sensor_numero TEXT NOT NULL,
+             nombre_fantasia TEXT,
+             nombre_comercial TEXT,
              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
         c.execute('''CREATE TABLE IF NOT EXISTS system_config
@@ -80,13 +82,22 @@ def init_db():
 
         c.execute('''CREATE TABLE IF NOT EXISTS extra_content
                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                     content_path TEXT,
-                     position TEXT,
-                     content_type TEXT)''')
+                    content_path TEXT NOT NULL,
+                    position TEXT NOT NULL,
+                    content_type TEXT NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        
         c.execute('''CREATE TABLE IF NOT EXISTS etiquetas_sensores
-                    (pin INTEGER PRIMARY KEY,
-                     nombre TEXT NOT NULL,
-                     etiqueta TEXT)''') 
+                    (gpio_pin INTEGER PRIMARY KEY,
+                     sensor_numero TEXT NOT NULL,
+                     nombre_fantasia TEXT,
+                     nombre_comercial TEXT)''') 
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS activaciones 
+            (id INTEGER PRIMARY KEY AUTOINCREMENT,
+             sensor_id INTEGER,
+             duration INTEGER,
+             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
         # Configuración inicial
         c.execute('''INSERT OR IGNORE INTO system_config (key, value) 
@@ -96,10 +107,10 @@ def init_db():
         
         # Insertar nombres predeterminados de sensores
         for pin, nombre in sensor_mapping.items():
-            c.execute('''INSERT OR REPLACE INTO etiquetas_sensores (pin, nombre) 
+            c.execute('''INSERT OR REPLACE INTO etiquetas_sensores (gpio_pin, sensor_numero) 
                         VALUES (?, ?)''', (pin, nombre))
         try:
-            c.execute('ALTER TABLE etiquetas_sensores ADD COLUMN etiqueta TEXT')
+            c.execute('ALTER TABLE etiquetas_sensores ADD COLUMN nombre_fantasia TEXT')
             conn.commit()
         except sqlite3.OperationalError:
             # La columna ya existe
@@ -131,7 +142,33 @@ def login_page():
 @app.route('/panel')
 @login_required
 def panel():
-    return render_template('panel.html')
+    try:
+        conn = sqlite3.connect('vitrina.db')
+        cursor = conn.cursor()
+        
+        # Obtener información de los sensores
+        cursor.execute('''
+            SELECT s.gpio_pin, s.sensor_numero, s.nombre_fantasia, v.video_path 
+            FROM etiquetas_sensores s 
+            LEFT JOIN sensor_videos v ON s.gpio_pin = v.sensor_id
+            ORDER BY s.sensor_numero
+        ''')
+        
+        sensors = []
+        for row in cursor.fetchall():
+            sensors.append({
+                'gpio_pin': row[0],  # gpio_pin
+                'sensor_numero': row[1],  # sensor_numero
+                'nombre_fantasia': row[2] if row[2] else '',  # nombre_fantasia
+                'video_path': row[3] if row[3] else None  # video_path
+            })
+            
+        conn.close()
+        return render_template('panel.html', sensors=sensors)
+        
+    except Exception as e:
+        print(f"Error al cargar el panel: {str(e)}")
+        return render_template('panel.html', sensors=[])
 
 @app.route('/dashboard')
 @login_required
@@ -152,30 +189,38 @@ def logout():
     return jsonify({'success': True})
 
 @app.route('/api/update-sensor-name', methods=['POST'])
-@login_required
 def update_sensor_name():
     try:
-        data = request.json
-        sensor_id = data.get('sensorId')
-        etiqueta = data.get('name')
-
-        if not sensor_id or not etiqueta:
-            return jsonify({'error': 'Datos incompletos'}), 400
-
+        data = request.get_json()
+        sensor_id = data.get('sensor_id')
+        new_name = data.get('new_name')
+        
+        if not sensor_id or new_name is None:
+            return jsonify({'error': 'Se requiere sensor_id y new_name'}), 400
+            
         with sqlite3.connect('vitrina.db') as conn:
             c = conn.cursor()
-            c.execute('''UPDATE etiquetas_sensores 
-                        SET etiqueta = ?, 
-                            timestamp = CURRENT_TIMESTAMP 
-                        WHERE pin = ?''', 
-                     (etiqueta, sensor_id))
+            c.execute('''
+                UPDATE etiquetas_sensores 
+                SET nombre_fantasia = ? 
+                WHERE gpio_pin = ?
+            ''', (new_name, sensor_id))
             conn.commit()
             
-        return jsonify({'success': True})
+            if c.rowcount == 0:
+                # Si no existe, lo insertamos
+                c.execute('''
+                    INSERT INTO etiquetas_sensores (gpio_pin, sensor_numero, nombre_fantasia)
+                    VALUES (?, ?, ?)
+                ''', (sensor_id, f'Sensor {sensor_id}', new_name))
+                conn.commit()
+                
+        return jsonify({'success': True, 'message': 'Nombre actualizado correctamente'})
+        
     except Exception as e:
-        app.logger.error(f"Error en update_sensor_name: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-    
+        app.logger.error(f"Error updating sensor name: {str(e)}")
+        return jsonify({'error': f'Error al actualizar el nombre del sensor: {str(e)}'}), 500
+
 @app.route('/monitor')
 def monitor():
     return render_template('monitor.html') # Renderizar monitor.html
@@ -189,34 +234,38 @@ def get_sensor_status(sensor_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
-@app.route('/api/remove_video/<int:sensor_id>', methods=['DELETE'])
+@app.route('/api/remove_sensor_video/<int:sensor_id>', methods=['DELETE', 'POST'])
 @login_required
 def remove_sensor_video(sensor_id):
     try:
         with sqlite3.connect('vitrina.db') as conn:
             c = conn.cursor()
-            # Obtener ruta del video
+            
+            # Obtener el video actual
             c.execute('SELECT video_path FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
             result = c.fetchone()
             
             if result:
-                video_path = os.path.join(app.config['UPLOAD_FOLDER'], 
-                                        os.path.basename(result[0]))
-                # Eliminar archivo si existe
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-                    
-                # Eliminar registro
+                video_path = result[0]
+                # Eliminar el registro de la base de datos
                 c.execute('DELETE FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
                 conn.commit()
-                return jsonify({'success': True})
                 
-        return jsonify({'error': 'Video no encontrado'}), 404
-        
+                # Eliminar el archivo si existe
+                try:
+                    if os.path.exists(video_path):
+                        os.remove(video_path)
+                except Exception as e:
+                    print(f"Error al eliminar archivo: {str(e)}")
+                
+                return jsonify({'success': True, 'message': 'Video eliminado correctamente'})
+            else:
+                return jsonify({'success': False, 'error': 'No se encontró el video'}), 404
+            
     except Exception as e:
-        app.logger.error(f"Error eliminando video: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-    
+        print(f"Error al eliminar video: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/upload_background', methods=['POST'])
 @login_required
 def upload_background_video():
@@ -315,24 +364,43 @@ def sensor_status():
 def obtener_etiquetas_sensores():
     with sqlite3.connect('vitrina.db') as conn:
         c = conn.cursor()
-        c.execute('SELECT pin, nombre FROM etiquetas_sensores')
-        etiquetas = dict(c.fetchall())
+        c.execute('''
+            SELECT 
+                gpio_pin,
+                sensor_numero,
+                nombre_fantasia,
+                silenciado
+            FROM etiquetas_sensores
+        ''')
+        resultados = c.fetchall()
+        etiquetas = [
+            {
+                'gpio_pin': gpio_pin,
+                'sensor_numero': sensor_numero,
+                'nombre_fantasia': nombre_fantasia,
+                'silenciado': silenciado
+            }
+            for gpio_pin, sensor_numero, nombre_fantasia, silenciado in resultados
+        ]
         return jsonify(etiquetas)
 
 @app.route('/api/actualizar-etiqueta', methods=['POST'])
 @login_required
 def actualizar_etiqueta_sensor():
     datos = request.json
-    pin = datos.get('pin')
-    nombre = datos.get('nombre')
+    gpio_pin = datos.get('gpio_pin')
+    nombre_fantasia = datos.get('nombre_fantasia')
     
-    if not pin or not nombre:
-        return jsonify({'error': 'Faltan datos'}), 400
+    if not gpio_pin:
+        return jsonify({'error': 'Falta el número de GPIO'}), 400
         
     with sqlite3.connect('vitrina.db') as conn:
         c = conn.cursor()
-        c.execute('UPDATE etiquetas_sensores SET nombre = ? WHERE pin = ?', 
-                 (nombre, pin))
+        c.execute('''
+            UPDATE etiquetas_sensores 
+            SET nombre_fantasia = ?
+            WHERE gpio_pin = ?
+        ''', (nombre_fantasia, gpio_pin))
         conn.commit()
     return jsonify({'success': True})
 
@@ -342,9 +410,9 @@ def get_sensor_video(sensor_id):
     with sqlite3.connect('vitrina.db') as conn:
         c = conn.cursor()
         c.execute('''
-            SELECT sv.video_path, sn.nombre 
+            SELECT sv.video_path, sn.nombre_fantasia 
             FROM sensor_videos sv 
-            LEFT JOIN etiquetas_sensores sn ON sv.sensor_id = sn.pin 
+            LEFT JOIN etiquetas_sensores sn ON sv.sensor_id = sn.gpio_pin 
             WHERE sv.sensor_id = ?
         ''', (sensor_id,))
         result = c.fetchone()
@@ -357,9 +425,22 @@ def get_sensor_video(sensor_id):
 def get_background_videos():
     with sqlite3.connect('vitrina.db') as conn:
         c = conn.cursor()
-        c.execute('SELECT id, video_path, orden FROM background_videos ORDER BY orden')
-        videos = [{'id': row[0], 'video_path': row[1], 'orden': row[2]} 
-                 for row in c.fetchall()]
+        # Añadir COALESCE para manejar valores NULL en orden
+        c.execute('''
+            SELECT id, video_path, COALESCE(orden, 0) as orden 
+            FROM background_videos 
+            ORDER BY orden ASC
+        ''')
+        videos = [
+            {
+                'id': row[0], 
+                'video_path': row[1], 
+                'orden': row[2]
+            } 
+            for row in c.fetchall()
+        ]
+        # Añadir logging para debug
+        print("Returning background videos:", videos)
         return jsonify(videos)
 
 @app.route('/api/sensor_videos')
@@ -368,13 +449,21 @@ def get_all_sensor_videos():
     with sqlite3.connect('vitrina.db') as conn:
         c = conn.cursor()
         c.execute('''
-            SELECT sv.sensor_id, sv.video_path, es.nombre 
+            SELECT 
+                sv.sensor_id, 
+                sv.video_path,
+                COALESCE(es.nombre_fantasia, es.sensor_numero) as nombre_sensor,
+                es.nombre_fantasia
             FROM sensor_videos sv 
-            LEFT JOIN etiquetas_sensores es ON sv.sensor_id = es.pin
+            LEFT JOIN etiquetas_sensores es ON sv.sensor_id = es.gpio_pin
+            ORDER BY sv.sensor_id
         ''')
-        videos = [{'sensor_id': row[0], 
-                  'video_path': row[1],
-                  'nombre_sensor': row[2]} for row in c.fetchall()]
+        videos = [{
+            'sensor_id': row[0],
+            'video_path': row[1],
+            'nombre_sensor': row[2],
+            'nombre_fantasia': row[3]
+        } for row in c.fetchall()]
         return jsonify(videos)
 
 @app.route('/api/upload_video', methods=['POST'])
@@ -406,58 +495,35 @@ def upload_video():
 @app.route('/api/update-versus-mode', methods=['POST'])
 @login_required 
 def update_versus_mode():
-    data = request.json
-    mode = data.get('mode')
-    with sqlite3.connect('vitrina.db') as conn:  
-        c = conn.cursor()
-        c.execute('UPDATE system_config SET value = ? WHERE key = ?', (str(mode), 'versus_mode'))
-        conn.commit()
-    return jsonify({'success': True})
-
-
-@app.route('/api/update-extra-content', methods=['POST'])
-@login_required
-def update_extra_content():
-    if 'content' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-        
-    file = request.files['content']
-    position = request.form.get('position', 'bottom-right')
-    
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-        
+    global current_mode
     try:
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        with sqlite3.connect('vitrina.db') as conn:
+        data = request.json
+        mode = int(data.get('mode', 1))
+        if not 1 <= mode <= 4:
+            return jsonify({'error': 'Modo inválido. Debe ser entre 1 y 4'}), 400
+            
+        with sqlite3.connect('vitrina.db') as conn:  
             c = conn.cursor()
-            # Determinar el tipo de contenido basado en la extensión
-            content_type = 'video' if filename.lower().endswith(('.mp4','.webm','.mov')) else 'image'
-            
-            # Insertar o actualizar el contenido extra
-            c.execute('''INSERT OR REPLACE INTO extra_content 
-                        (content_path, position, content_type) 
-                        VALUES (?, ?, ?)''',
-                     (os.path.join('videos', filename), position, content_type))
+            c.execute('UPDATE system_config SET value = ? WHERE key = ?', (str(mode), 'versus_mode'))
             conn.commit()
-            
-        return jsonify({'success': True})
+            current_mode = mode
+        return jsonify({'success': True, 'mode': mode})
     except Exception as e:
-        app.logger.error(f"Error en update_extra_content: {str(e)}")
+        print(f"Error al actualizar modo versus: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    
-
 
 @app.route('/api/get-current-mode')
 def get_current_mode():
-    with sqlite3.connect('vitrina.db') as conn:
-        c = conn.cursor()
-        c.execute('SELECT value FROM system_config WHERE key = ?', ('versus_mode',))
-        result = c.fetchone()
-        return jsonify({'mode': int(result[0]) if result else 1})
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('SELECT value FROM system_config WHERE key = ?', ('versus_mode',))
+            result = c.fetchone()
+            mode = int(result[0]) if result else current_mode
+            return jsonify({'mode': mode})
+    except Exception as e:
+        print(f"Error al obtener modo actual: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/system-config')
 def get_system_config():
@@ -485,159 +551,69 @@ def register_sensor_activity(active_sensors, previous_sensors):
                      (sorted_sensors[0], sorted_sensors[1]))
         conn.commit()
 
-
-@app.route('/api/stats')
-def get_stats():
+def load_system_config():
+    global current_mode
     try:
-        date_from = request.args.get('from', '1900-01-01')
-        date_to = request.args.get('to', '2100-12-31')
-
-        app.logger.info(f"Solicitando estadísticas desde {date_from} hasta {date_to}")
-
         with sqlite3.connect('vitrina.db') as conn:
             c = conn.cursor()
-            
-            # Total de activaciones
-            c.execute('''
-                SELECT COUNT(*) 
-                FROM activaciones 
-                WHERE timestamp BETWEEN ? AND ?
-            ''', (date_from, date_to))
-            total_activations = c.fetchone()[0]
-            
-            # Total de versus
-            c.execute('''
-                SELECT COUNT(*) 
-                FROM versus 
-                WHERE timestamp BETWEEN ? AND ?
-            ''', (date_from, date_to))
-            total_versus = c.fetchone()[0]
-            
-            # Producto más popular y sus estadísticas
-            c.execute('''
-                SELECT 
-                    a.sensor_id,
-                    COALESCE(es.etiqueta, es.nombre) as nombre,
-                    COUNT(*) as count
-                FROM activaciones a
-                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.pin
-                WHERE a.timestamp BETWEEN ? AND ?
-                GROUP BY a.sensor_id
-                ORDER BY count DESC
-                LIMIT 1
-            ''', (date_from, date_to))
-            most_popular = c.fetchone()
-            
-            # Estadísticas por producto
-            c.execute('''
-                SELECT 
-                    a.sensor_id,
-                    COALESCE(es.etiqueta, es.nombre) as nombre,
-                    COUNT(*) as activations,
-                    MAX(a.timestamp) as last_activation
-                FROM activaciones a
-                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.pin
-                WHERE a.timestamp BETWEEN ? AND ?
-                GROUP BY a.sensor_id
-                ORDER BY activations DESC
-            ''', (date_from, date_to))
-            
-            product_stats = [{
-                'sensor_id': row[0],
-                'nombre': row[1] or f'Sensor {row[0]}',
-                'activations': row[2],
-                'last_activation': row[3]
-            } for row in c.fetchall()]
-            
-            # Estadísticas de versus
-            c.execute('''
-                SELECT 
-                    v.sensor1_id,
-                    v.sensor2_id,
-                    COALESCE(es1.etiqueta, es1.nombre) as nombre1,
-                    COALESCE(es2.etiqueta, es2.nombre) as nombre2,
-                    COUNT(*) as count,
-                    MAX(v.timestamp) as last_versus
-                FROM versus v
-                LEFT JOIN etiquetas_sensores es1 ON v.sensor1_id = es1.pin
-                LEFT JOIN etiquetas_sensores es2 ON v.sensor2_id = es2.pin
-                WHERE v.timestamp BETWEEN ? AND ?
-                GROUP BY v.sensor1_id, v.sensor2_id
-                ORDER BY count DESC
-            ''', (date_from, date_to))
-            
-            versus_stats = [{
-                'sensor1_id': row[0],
-                'sensor2_id': row[1],
-                'nombre1': row[2] or f'Sensor {row[0]}',
-                'nombre2': row[3] or f'Sensor {row[1]}',
-                'count': row[4],
-                'last_versus': row[5]
-            } for row in c.fetchall()]
-            
-            # Estadísticas por hora
-            c.execute('''
-                SELECT strftime('%H', timestamp) as hour, COUNT(*) as count
-                FROM activaciones
-                WHERE timestamp BETWEEN ? AND ?
-                GROUP BY hour
-                ORDER BY hour
-            ''', (date_from, date_to))
-            
-            hourly_data = dict(c.fetchall())
-            hourly_stats = [int(hourly_data.get(str(h).zfill(2), 0)) for h in range(24)]
-            
-            # Historial de asignaciones
-            c.execute('''
-                SELECT 
-                    sv.sensor_id,
-                    COALESCE(es.etiqueta, es.nombre) as nombre,
-                    sv.video_path,
-                    MIN(a.timestamp) as fecha_inicio,
-                    MAX(a.timestamp) as fecha_fin,
-                    COUNT(*) as total_activaciones,
-                    ROUND(CAST(COUNT(*) AS FLOAT) / (
-                        JULIANDAY(MAX(a.timestamp)) - JULIANDAY(MIN(a.timestamp)) + 1
-                    ), 2) as promedio_diario
-                FROM sensor_videos sv
-                LEFT JOIN etiquetas_sensores es ON sv.sensor_id = es.pin
-                LEFT JOIN activaciones a ON sv.sensor_id = a.sensor_id
-                WHERE a.timestamp BETWEEN ? AND ?
-                GROUP BY sv.sensor_id, sv.video_path
-                ORDER BY fecha_inicio DESC
-                LIMIT 10
-            ''', (date_from, date_to))
-            
-            history = [{
-                'sensor_id': row[0],
-                'nombre': row[1] or f'Sensor {row[0]}',
-                'video_path': row[2],
-                'fecha_inicio': row[3],
-                'fecha_fin': row[4],
-                'total_activaciones': row[5],
-                'promedio_diario': row[6]
-            } for row in c.fetchall()]
-
-            response_data = {
-                'total_activations': total_activations,
-                'total_versus': total_versus,
-                'most_popular_product': most_popular[1] if most_popular else None,
-                'most_common_versus': f"{versus_stats[0]['nombre1']} vs {versus_stats[0]['nombre2']}" if versus_stats else None,
-                'product_stats': product_stats,
-                'versus_stats': versus_stats,
-                'hourly_stats': hourly_stats,
-                'history': history
-            }
-            
-            app.logger.info(f"Datos a enviar: {response_data}")
-            return jsonify(response_data)
-
+            c.execute('SELECT value FROM system_config WHERE key = ?', ('versus_mode',))
+            result = c.fetchone()
+            if result:
+                current_mode = int(result[0])
     except Exception as e:
-        app.logger.error(f"Error en stats: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Error al cargar configuración: {str(e)}")
 
+@app.route('/api/stats')
+@login_required
+def get_stats():
+    try:
+        conn = sqlite3.connect('vitrina.db')
+        cursor = conn.cursor()
+        
+        # Total activaciones
+        cursor.execute('SELECT COUNT(*) FROM activaciones')
+        total_activations = cursor.fetchone()[0]
+        
+        # Activaciones hoy
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM activaciones 
+            WHERE date(timestamp, 'localtime') = date('now', 'localtime')
+        ''')
+        today_activations = cursor.fetchone()[0]
+        
+        # Activaciones esta semana
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM activaciones 
+            WHERE timestamp >= datetime('now', '-7 days', 'localtime')
+        ''')
+        week_activations = cursor.fetchone()[0]
+        
+        # Activaciones este mes
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM activaciones 
+            WHERE strftime('%Y-%m', timestamp, 'localtime') = strftime('%Y-%m', 'now', 'localtime')
+        ''')
+        month_activations = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_activations': total_activations,
+                'today_activations': today_activations,
+                'week_activations': week_activations,
+                'month_activations': month_activations
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error en /api/stats: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
-    
 @app.route('/api/toggle-debug', methods=['POST'])
 @login_required
 def toggle_debug():
@@ -656,6 +632,31 @@ def toggle_debug():
         app.logger.error(f"Error en toggle_debug: {str(e)}")
         return jsonify({'error': str(e)}), 500
     
+@app.route('/api/public/sensor_videos')
+def get_public_sensor_videos():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT 
+                sv.sensor_id, 
+                sv.video_path,
+                COALESCE(es.nombre_fantasia, es.sensor_numero) as nombre
+            FROM sensor_videos sv 
+            LEFT JOIN etiquetas_sensores es ON sv.sensor_id = es.gpio_pin
+        ''')
+        videos = [{'sensor_id': row[0], 
+                  'video_path': row[1],
+                  'nombre': row[2]} for row in c.fetchall()]
+        return jsonify(videos)
+
+@app.route('/api/public/background_videos')
+def get_public_background_videos():
+    with sqlite3.connect('vitrina.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT id, video_path, orden FROM background_videos ORDER BY orden')
+        videos = [{'id': row[0], 'video_path': row[1], 'orden': row[2]} 
+                 for row in c.fetchall()]
+        return jsonify(videos)
 
 @app.route('/api/move_background', methods=['POST'])
 @login_required
@@ -772,10 +773,282 @@ def get_uptime():
         return "N/A"
 
 
+@app.route('/api/dashboard-stats')
+@login_required
+def get_dashboard_stats():
+    try:
+        from_date = request.args.get('from', '')
+        to_date = request.args.get('to', '')
+        
+        # Si no se proporcionan fechas, usar el día actual
+        if not from_date or not to_date:
+            today = datetime.now()
+            from_date = today.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d 00:00:00')
+            to_date = today.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%d 23:59:59')
+            
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            
+            # Total de activaciones en el período
+            c.execute('''
+                SELECT COUNT(*) 
+                FROM activaciones 
+                WHERE timestamp BETWEEN ? AND ?
+            ''', (from_date, to_date))
+            total_activaciones = c.fetchone()[0]
+            
+            # Activaciones de hoy
+            today_start = datetime.now().strftime('%Y-%m-%d 00:00:00')
+            today_end = datetime.now().strftime('%Y-%m-%d 23:59:59')
+            c.execute('''
+                SELECT COUNT(*) 
+                FROM activaciones 
+                WHERE timestamp BETWEEN ? AND ?
+            ''', (today_start, today_end))
+            activaciones_hoy = c.fetchone()[0]
+            
+            # Activaciones de la semana
+            week_start = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d 00:00:00')
+            c.execute('''
+                SELECT COUNT(*) 
+                FROM activaciones 
+                WHERE timestamp >= ?
+            ''', (week_start,))
+            activaciones_semana = c.fetchone()[0]
+            
+            # Activaciones del mes
+            month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0).strftime('%Y-%m-%d 00:00:00')
+            c.execute('''
+                SELECT COUNT(*) 
+                FROM activaciones 
+                WHERE timestamp >= ?
+            ''', (month_start,))
+            activaciones_mes = c.fetchone()[0]
+            
+            # Activaciones por día
+            c.execute('''
+                SELECT 
+                    date(timestamp) as fecha,
+                    COUNT(*) as total
+                FROM activaciones 
+                WHERE timestamp BETWEEN ? AND ?
+                GROUP BY date(timestamp)
+                ORDER BY fecha
+            ''', (from_date, to_date))
+            activaciones_por_dia = [{
+                'fecha': row[0],
+                'total': row[1]
+            } for row in c.fetchall()]
+            
+            # Activaciones por sensor con nombre fantasia
+            c.execute('''
+                SELECT 
+                    a.sensor_id,
+                    COALESCE(es.nombre_fantasia, es.sensor_numero) as nombre,
+                    COUNT(*) as total
+                FROM activaciones a
+                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+                WHERE a.timestamp BETWEEN ? AND ?
+                GROUP BY a.sensor_id, es.nombre_fantasia, es.sensor_numero
+                ORDER BY total DESC
+            ''', (from_date, to_date))
+            activaciones_por_sensor = [{
+                'sensor_id': row[0],
+                'nombre_fantasia': row[1] or f'Sensor {row[0]}',
+                'total': row[2]
+            } for row in c.fetchall()]
+            
+            # Ranking de sensores
+            c.execute('''
+                SELECT 
+                    a.sensor_id,
+                    COALESCE(es.nombre_fantasia, es.sensor_numero) as nombre,
+                    COUNT(*) as total,
+                    MAX(a.timestamp) as ultima_activacion
+                FROM activaciones a
+                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+                WHERE a.timestamp BETWEEN ? AND ?
+                GROUP BY a.sensor_id, es.nombre_fantasia, es.sensor_numero
+                ORDER BY total DESC
+            ''', (from_date, to_date))
+            ranking = [{
+                'sensor_id': row[0],
+                'nombre_fantasia': row[1] or f'Sensor {row[0]}',
+                'total': row[2],
+                'ultima_activacion': row[3]
+            } for row in c.fetchall()]
+            
+            # Historial de asignaciones de videos
+            c.execute('''
+                SELECT 
+                    sv.sensor_id,
+                    COALESCE(es.nombre_fantasia, es.sensor_numero) as nombre,
+                    sv.video_path,
+                    MIN(a.timestamp) as fecha_inicio,
+                    MAX(a.timestamp) as fecha_fin,
+                    COUNT(*) as total_activaciones,
+                    ROUND(
+                        CAST(COUNT(*) AS FLOAT) / (
+                        JULIANDAY(MAX(a.timestamp)) - JULIANDAY(MIN(a.timestamp)) + 1
+                    ), 2) as promedio_diario
+                FROM sensor_videos sv
+                LEFT JOIN etiquetas_sensores es ON sv.sensor_id = es.gpio_pin
+                LEFT JOIN activaciones a ON sv.sensor_id = a.sensor_id
+                WHERE a.timestamp BETWEEN ? AND ?
+                GROUP BY sv.sensor_id, sv.video_path, es.nombre_fantasia, es.sensor_numero
+                ORDER BY total_activaciones DESC
+            ''', (from_date, to_date))
+            historial = [{
+                'sensor_id': row[0],
+                'nombre_fantasia': row[1] or f'Sensor {row[0]}',
+                'video_path': row[2],
+                'fecha_inicio': row[3],
+                'fecha_fin': row[4],
+                'total_activaciones': row[5],
+                'promedio_diario': row[6]
+            } for row in c.fetchall()]
+
+            return jsonify({
+                'total_activaciones': total_activaciones,
+                'activaciones_hoy': activaciones_hoy,
+                'activaciones_semana': activaciones_semana,
+                'activaciones_mes': activaciones_mes,
+                'activaciones_por_dia': activaciones_por_dia,
+                'activaciones_por_sensor': activaciones_por_sensor,
+                'ranking': ranking,
+                'historial': historial
+            })
+            
+    except Exception as e:
+        app.logger.error(f"Error getting dashboard stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+@app.route('/api/update-extra-content', methods=['POST'])
+@login_required
+def update_extra_content():
+    try:
+        if 'content' not in request.files:
+            return jsonify({'error': 'No se encontró archivo de contenido'}), 400
+            
+        file = request.files['content']
+        position = request.form.get('position')
+        
+        if file.filename == '':
+            return jsonify({'error': 'No se seleccionó ningún archivo'}), 400
+
+        if not position:
+            return jsonify({'error': 'No se especificó la posición'}), 400
+
+        # Determinar el tipo de contenido
+        filename = secure_filename(file.filename)
+        file_extension = filename.rsplit('.', 1)[1].lower()
+        
+        if file_extension in {'jpg', 'jpeg', 'png', 'gif'}:
+            content_type = 'image'
+        elif file_extension in {'mp4', 'webm', 'mov'}:
+            content_type = 'video'
+        else:
+            return jsonify({'error': 'Tipo de archivo no soportado'}), 400
+
+        # Guardar el archivo
+        content_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(content_path)
+        
+        # Actualizar la base de datos
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO extra_content (content_path, position, content_type) 
+                VALUES (?, ?, ?)
+            ''', (os.path.join('videos', filename), position, content_type))
+            conn.commit()
+            
+        return jsonify({
+            'success': True,
+            'message': 'Contenido extra actualizado correctamente'
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error updating extra content: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/register_activation', methods=['POST'])
+def register_activation():
+    try:
+        data = request.get_json()
+        sensor_id = data.get('sensor_id')
+        duration = data.get('duration', 0)
+        
+        if not sensor_id:
+            return jsonify({'error': 'Sensor ID required'}), 400
+            
+        if duration < 5000:  # Menos de 5 segundos
+            return jsonify({'success': False, 'message': 'Duration too short'}), 200
+            
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO activaciones (sensor_id, duration) 
+                VALUES (?, ?)
+            ''', (sensor_id, duration))
+            conn.commit()
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error registering activation: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+@app.route('/api/reset_stats', methods=['POST'])
+@login_required
+def reset_stats():
+    try:
+        with sqlite3.connect('vitrina.db') as conn:
+            c = conn.cursor()
+            c.execute('DELETE FROM activaciones')
+            conn.commit()
+        return jsonify({'success': True, 'message': 'Estadísticas reiniciadas'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/activations')
+@login_required
+def get_activations():
+    try:
+        conn = sqlite3.connect('vitrina.db')
+        cursor = conn.cursor()
+        
+        # Obtener activaciones de los últimos 7 días
+        cursor.execute('''
+            SELECT 
+                strftime('%Y-%m-%d', timestamp) as fecha,
+                sensor_id,
+                COUNT(*) as activaciones
+            FROM activaciones
+            WHERE timestamp >= date('now', '-7 days')
+            GROUP BY fecha, sensor_id
+            ORDER BY fecha DESC, sensor_id
+        ''')
+        
+        rows = cursor.fetchall()
+        activations = []
+        
+        for row in rows:
+            activations.append({
+                'date': row[0],
+                'sensor_id': row[1],
+                'count': row[2]
+            })
+        
+        conn.close()
+        return jsonify({'success': True, 'activations': activations})
+        
+    except Exception as e:
+        print(f"Error en /api/activations: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     setup_gpio()
     init_db()
+    load_system_config()  # Cargar configuración al inicio
     if not os.path.exists(UPLOAD_FOLDER):
         os.makedirs(UPLOAD_FOLDER)
     app.run(host='0.0.0.0', port=5000, debug=True)

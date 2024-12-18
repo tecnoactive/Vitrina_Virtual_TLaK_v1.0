@@ -9,8 +9,6 @@
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-
 </head>
 <body>
     <!-- Loading Overlay -->
@@ -22,25 +20,26 @@
     </div>
 
     <!-- Barra de Navegación -->
-    <nav class="nav-menu"><div><img src="/static/images/logo_.png" alt="Logo" class="logo">
+    <nav class="nav-menu">
+        <div>
+            <img src="/static/images/logo_.png" alt="Logo" class="logo">
             <a href="/dashboard">Dashboard</a>
             <a href="#sensors">Sensores</a>
             <a href="#background">Videos de Fondo</a>
         </div>
-        <button onclick="handleLogout()" class="button">Cerrar Sesión</button>
+        <button onclick="handleLogout()" class="btn btn-danger">Cerrar Sesión</button>
     </nav>
 
     <!-- Contenido Principal -->
     <div class="container">
         <!-- Configuración del Sistema -->
-        <div class="card">        
-
+        <div class="card">
             <h2>Configuración del Sistema</h2>
             <div class="system-controls">
                 <!-- Control Debug -->
                 <div class="control-group">
                     <h3>Debug Panel</h3>
-                    <button onclick="toggleDebugPanel()" class="button">
+                    <button onclick="toggleDebugPanel()" class="btn btn-primary">
                         <span id="debug-status">Activar</span> Debug Panel
                     </button>
                     <p id="current-mode"></p>
@@ -80,7 +79,68 @@
         <!-- Gestión de Sensores -->
         <div class="card" id="sensors">
             <h2>Gestión de Sensores</h2>
-            <div id="sensor-list" class="sensor-grid"></div>
+            <div id="sensor-list" class="sensor-grid">
+                {% for sensor in sensors %}
+                <div class="sensor-card">
+                    <h3>{{ sensor.sensor_numero }}</h3>
+                    <p>GPIO {{ sensor.gpio_pin }}</p>
+                    
+                    <div class="form-group">
+                        <label>Nombre de fantasía:</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="fantasy-name-{{ sensor.gpio_pin|string }}" 
+                               value="{{ sensor.nombre_fantasia }}"
+                               placeholder="Ingrese nombre"
+                               data-sensor-id="{{ sensor.gpio_pin|string }}">
+                        <button onclick="saveSensorName('{{ sensor.gpio_pin|string }}')" 
+                                class="btn btn-primary">Guardar</button>
+                    </div>
+
+                    <div class="video-section">
+                        <p class="current-video">
+                            Video actual: 
+                            <span id="current-video-{{ sensor.gpio_pin|string }}">
+                                {% if sensor.video_path %}
+                                    {{ sensor.video_path.split('/')[-1] }}
+                                {% else %}
+                                    Sin video
+                                {% endif %}
+                            </span>
+                        </p>
+                        
+                        <form id="upload-form-{{ sensor.gpio_pin|string }}" class="upload-form">
+                            <div class="file-input-container">
+                                <label for="video-file-{{ sensor.gpio_pin|string }}" class="file-label">
+                                    Seleccionar video
+                                </label>
+                                <input type="file" 
+                                       id="video-file-{{ sensor.gpio_pin|string }}" 
+                                       name="video"
+                                       class="file-input"
+                                       accept="video/mp4,video/webm,video/mov"
+                                       data-sensor-id="{{ sensor.gpio_pin|string }}">
+                                <span class="selected-file-name" id="selected-file-{{ sensor.gpio_pin|string }}">
+                                    Ningún archivo seleccionado
+                                </span>
+                            </div>
+                        </form>
+
+                        <div class="button-group">
+                            <button onclick="uploadAndAssignVideo('{{ sensor.gpio_pin|string }}')" 
+                                    class="btn btn-primary">Subir y Asignar Video</button>
+                            
+                            {% if sensor.video_path %}
+                            <button onclick="removeVideo('{{ sensor.gpio_pin|string }}')" 
+                                    class="btn btn-danger">Quitar Video</button>
+                            <button onclick="previewVideo('{{ sensor.video_path }}')" 
+                                    class="btn btn-info">Ver Preview</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
         </div>
 
         <!-- Videos de Fondo -->
@@ -94,13 +154,16 @@
         </div>
     </div>
 
-    <!-- Modal de Preview -->
-    <div id="preview-modal" class="modal">
+    <!-- Modal para Preview de Video -->
+    <div id="videoModal" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closePreview()">&times;</span>
-            <video id="preview-video" controls></video>
+            <span class="close">&times;</span>
+            <video id="previewVideo" controls>
+                Tu navegador no soporta el elemento video.
+            </video>
         </div>
     </div>
+
     <div class="card container"> 
         <div class="monitor-container"> 
     
@@ -111,197 +174,308 @@
             </div>
         </div>
     </div>
+
     <!-- Scripts -->
-<!-- Scripts -->
-<script src="/static/js/panel.js"></script>
+    <script src="/static/js/panel.js"></script>
 
-
-<script type="text/babel">
-    const { useState, useEffect } = React;
-    
-    const SystemMonitor = () => {
-     const [systemInfo, setSystemInfo] = useState({
-       cpu_percent: 0,
-       mem_percent: 0,
-       cpu_temp: 0,
-       disk_percent: 0,
-       uptime: '',
-       swap_percent: 0
-     });
-    
-     useEffect(() => {
-       const ctx = document.getElementById('performanceChart');
-       const chart = new Chart(ctx, {
-         type: 'line',
-         data: {
-           labels: [],
-           datasets: [{
-             label: 'CPU',
-             data: [],
-             borderColor: '#3b82f6',
-             backgroundColor: 'rgba(59, 130, 246, 0.1)',
-             tension: 0.3,
-             fill: true
-           }, {
-             label: 'Memoria',
-             data: [],
-             borderColor: '#10b981',
-             backgroundColor: 'rgba(16, 185, 129, 0.1)',
-             tension: 0.3,
-             fill: true
-           }]
-         },
-         options: {
-           responsive: true,
-           maintainAspectRatio: true,
-           animation: false,
-           plugins: {
-             legend: {
-               position: 'top',
-               labels: {
-                 usePointStyle: true,
-                 padding: 15,
-                 font: {
-                   family: "'Inter', sans-serif",
-                   size: 12
-                 }
-               }
-             }
-           },
-           scales: {
-             y: {
-               beginAtZero: true,
-               max: 100,
-               grid: {
-                 color: 'rgba(0,0,0,0.05)'
-               },
-               ticks: {
-                 callback: value => value + '%',
-                 font: {
-                   family: "'Inter', sans-serif",
-                   size: 11
-                 }
-               }
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        const SystemMonitor = () => {
+         const [systemInfo, setSystemInfo] = useState({
+           cpu_percent: 0,
+           mem_percent: 0,
+           cpu_temp: 0,
+           disk_percent: 0,
+           uptime: '',
+           swap_percent: 0
+         });
+        
+         useEffect(() => {
+           const ctx = document.getElementById('performanceChart');
+           const chart = new Chart(ctx, {
+             type: 'line',
+             data: {
+               labels: [],
+               datasets: [{
+                 label: 'CPU',
+                 data: [],
+                 borderColor: '#3b82f6',
+                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                 tension: 0.3,
+                 fill: true
+               }, {
+                 label: 'Memoria',
+                 data: [],
+                 borderColor: '#10b981',
+                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                 tension: 0.3,
+                 fill: true
+               }]
              },
-             x: {
-               grid: {
-                 display: false
+             options: {
+               responsive: true,
+               maintainAspectRatio: true,
+               animation: false,
+               plugins: {
+                 legend: {
+                   position: 'top',
+                   labels: {
+                     usePointStyle: true,
+                     padding: 15,
+                     font: {
+                       family: "'Inter', sans-serif",
+                       size: 12
+                     }
+                   }
+                 }
                },
-               ticks: {
-                 font: {
-                   family: "'Inter', sans-serif",
-                   size: 11
+               scales: {
+                 y: {
+                   beginAtZero: true,
+                   max: 100,
+                   grid: {
+                     color: 'rgba(0,0,0,0.05)'
+                   },
+                   ticks: {
+                     callback: value => value + '%',
+                     font: {
+                       family: "'Inter', sans-serif",
+                       size: 11
+                     }
+                   }
+                 },
+                 x: {
+                   grid: {
+                     display: false
+                   },
+                   ticks: {
+                     font: {
+                       family: "'Inter', sans-serif",
+                       size: 11
+                     }
+                   }
                  }
                }
              }
-           }
-         }
-       });
-    
-       const updateInfo = async () => {
-         try {
-           const response = await fetch('/api/system_info');
-           const data = await response.json();
-           setSystemInfo(data);
-           
-           const time = new Date().toLocaleTimeString();
-           chart.data.labels.push(time);
-           chart.data.datasets[0].data.push(data.cpu_percent);
-           chart.data.datasets[1].data.push(data.mem_percent);
-           
-           if (chart.data.labels.length > 20) {
-             chart.data.labels.shift();
-             chart.data.datasets.forEach(dataset => dataset.data.shift());
-           }
-           
-           chart.update('none');
-         } catch (error) {
-           console.error('Error:', error);
-         }
-       };
-    
-       updateInfo();
-       const interval = setInterval(updateInfo, 5000);
-       return () => {
-         clearInterval(interval);
-         chart.destroy();
-       };
-     }, []);
-    
-     const StatCard = ({ title, value, icon, color }) => (
-       <div className="bg-white rounded-lg p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow">
-         <div className="flex justify-between items-center">
-           <div>
-             <h3 className="text-gray-600 text-sm font-medium">{title}</h3>
-             <p className="text-3xl font-bold mt-2 text-gray-800">{value}</p>
+           });
+        
+           const updateInfo = async () => {
+             try {
+               const response = await fetch('/api/system_info');
+               const data = await response.json();
+               setSystemInfo(data);
+               
+               const time = new Date().toLocaleTimeString();
+               chart.data.labels.push(time);
+               chart.data.datasets[0].data.push(data.cpu_percent);
+               chart.data.datasets[1].data.push(data.mem_percent);
+               
+               if (chart.data.labels.length > 20) {
+                 chart.data.labels.shift();
+                 chart.data.datasets.forEach(dataset => dataset.data.shift());
+               }
+               
+               chart.update('none');
+             } catch (error) {
+               console.error('Error:', error);
+             }
+           };
+        
+           updateInfo();
+           const interval = setInterval(updateInfo, 5000);
+           return () => {
+             clearInterval(interval);
+             chart.destroy();
+           };
+         }, []);
+        
+         const StatCard = ({ title, value, icon, color }) => (
+           <div className="bg-white rounded-lg p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow">
+             <div className="flex justify-between items-center">
+               <div>
+                 <h3 className="text-gray-600 text-sm font-medium">{title}</h3>
+                 <p className="text-3xl font-bold mt-2 text-gray-800">{value}</p>
+               </div>
+               <div className={`${color} rounded-full p-3 text-2xl shadow-md`}>
+                 {icon}
+               </div>
+             </div>
            </div>
-           <div className={`${color} rounded-full p-3 text-2xl shadow-md`}>
-             {icon}
+         );
+        
+         return (
+           <div className="p-6 max-w-7xl mx-auto">
+             <h2 className="text-2xl font-bold mb-6 text-gray-800">Monitor del Sistema</h2>
+             
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+               <StatCard 
+                 title="CPU" 
+                 value={`${systemInfo.cpu_percent}%`} 
+                 icon="💻"
+                 color="bg-blue-500"
+               />
+               <StatCard 
+                 title="Memoria" 
+                 value={`${systemInfo.mem_percent}%`} 
+                 icon="📊"
+                 color="bg-green-500"
+               />
+               <StatCard 
+                 title="Temperatura" 
+                 value={`${systemInfo.cpu_temp}°C`} 
+                 icon="🌡️"
+                 color="bg-red-500"
+               />
+               <StatCard 
+                 title="Disco" 
+                 value={`${systemInfo.disk_percent}%`} 
+                 icon="💾"
+                 color="bg-purple-500"
+               />
+               <StatCard 
+                 title="Tiempo Encendido" 
+                 value={systemInfo.uptime} 
+                 icon="⏱️"
+                 color="bg-orange-500"
+               />
+               <StatCard 
+                 title="Memoria Swap" 
+                 value={`${systemInfo.swap_percent}%`} 
+                 icon="🔄"
+                 color="bg-teal-500"
+               />
+             </div>
+        
+             <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-100">
+               <h3 className="text-lg font-semibold mb-4 text-gray-800">Historial de Rendimiento</h3>
+               <div className="h-64 w-full">
+                 <canvas id="performanceChart"></canvas>
+               </div>
+             </div>
            </div>
-         </div>
-       </div>
-     );
-    
-     return (
-       <div className="p-6 max-w-7xl mx-auto">
-         <h2 className="text-2xl font-bold mb-6 text-gray-800">Monitor del Sistema</h2>
-         
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-           <StatCard 
-             title="CPU" 
-             value={`${systemInfo.cpu_percent}%`} 
-             icon="💻"
-             color="bg-blue-500"
-           />
-           <StatCard 
-             title="Memoria" 
-             value={`${systemInfo.mem_percent}%`} 
-             icon="📊"
-             color="bg-green-500"
-           />
-           <StatCard 
-             title="Temperatura" 
-             value={`${systemInfo.cpu_temp}°C`} 
-             icon="🌡️"
-             color="bg-red-500"
-           />
-           <StatCard 
-             title="Disco" 
-             value={`${systemInfo.disk_percent}%`} 
-             icon="💾"
-             color="bg-purple-500"
-           />
-           <StatCard 
-             title="Tiempo Encendido" 
-             value={systemInfo.uptime} 
-             icon="⏱️"
-             color="bg-orange-500"
-           />
-           <StatCard 
-             title="Memoria Swap" 
-             value={`${systemInfo.swap_percent}%`} 
-             icon="🔄"
-             color="bg-teal-500"
-           />
-         </div>
-    
-         <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-100">
-           <h3 className="text-lg font-semibold mb-4 text-gray-800">Historial de Rendimiento</h3>
-           <div className="h-64 w-full">
-             <canvas id="performanceChart"></canvas>
-           </div>
-         </div>
-       </div>
-     );
-    };
-    
-    ReactDOM.render(
-     <SystemMonitor />,
-     document.getElementById('system-monitor')
-    );
+         );
+        };
+        
+        ReactDOM.render(
+         <SystemMonitor />,
+         document.getElementById('system-monitor')
+        );
+        </script>
+
+    <script>
+        // Actualizar el nombre del archivo seleccionado
+        document.querySelectorAll('.file-input').forEach(input => {
+            input.addEventListener('change', function() {
+                const sensorId = this.dataset.sensorId;
+                const fileName = this.files[0] ? this.files[0].name : 'Ningún archivo seleccionado';
+                document.getElementById(`selected-file-${sensorId}`).textContent = fileName;
+            });
+        });
+
+        // Función para subir y asignar video
+        async function uploadAndAssignVideo(sensorId) {
+            const fileInput = document.getElementById(`video-file-${sensorId}`);
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Por favor, seleccione un video primero');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('video', fileInput.files[0]);
+            formData.append('sensor_id', sensorId);
+
+            try {
+                const response = await fetch('/api/upload_video', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById(`current-video-${sensorId}`).textContent = fileInput.files[0].name;
+                    location.reload(); // Recargar para mostrar los nuevos botones
+                } else {
+                    alert('Error al subir el video: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error al subir el video: ' + error);
+            }
+        }
+
+        // Función para quitar video
+        async function removeVideo(sensorId) {
+            if (!confirm('¿Está seguro de quitar el video?')) return;
+
+            try {
+                const response = await fetch(`/api/remove_sensor_video/${sensorId}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error al quitar el video: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error al quitar el video: ' + error);
+            }
+        }
+
+        // Función para previsualizar video
+        function previewVideo(videoPath) {
+            const modal = document.getElementById('videoModal');
+            const video = document.getElementById('previewVideo');
+            video.src = '/static/videos/' + videoPath.split('/').pop();
+            modal.style.display = 'block';
+        }
+
+        // Cerrar modal
+        document.querySelector('.close').onclick = function() {
+            const modal = document.getElementById('videoModal');
+            const video = document.getElementById('previewVideo');
+            video.pause();
+            video.src = '';
+            modal.style.display = 'none';
+        }
+
+        // Función para guardar nombre de fantasía
+        async function saveSensorName(sensorId) {
+            const input = document.getElementById(`fantasy-name-${sensorId}`);
+            const newName = input.value;
+
+            try {
+                const response = await fetch('/api/update_sensor_name', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sensor_id: sensorId,
+                        fantasy_name: newName
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert('Nombre guardado correctamente');
+                } else {
+                    alert('Error al guardar el nombre: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error al guardar el nombre: ' + error);
+            }
+        }
+
+        // Función para cerrar sesión
+        function handleLogout() {
+            fetch('/api/logout', {
+                method: 'POST'
+            }).then(() => {
+                window.location.href = '/login';
+            });
+        }
     </script>
-
-
-</script>
 </body>
 </html>

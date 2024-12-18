@@ -2,6 +2,8 @@
 const SENSOR_PINS = [17, 27, 5, 6, 13, 18, 22, 26, 19];
 let currentUploads = new Set();
 let previewInterval = null;
+let notificationTimeout;
+
 
 // Inicialización
 document.addEventListener('DOMContentLoaded', async () => {
@@ -44,21 +46,50 @@ async function moveVideo(videoId, direction) {
     }
 }
 
-async function updateSensorName(sensorId, name) {
+
+
+function showNotification(message, type = 'success') {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    
+    // Remover notificaciones existentes
+    const existingNotifications = document.querySelectorAll('.notification');
+    existingNotifications.forEach(n => n.remove());
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+
+async function updateSensorName(sensorId, newName) {
     try {
         const response = await fetch('/api/update-sensor-name', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({sensorId, name})
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                sensor_id: sensorId,
+                new_name: newName
+            })
         });
-        
+
+        const data = await response.json();
+
         if (response.ok) {
-            showSuccess('Nombre del sensor actualizado');
+            showNotification(`Nombre del sensor actualizado a: ${newName}`);
+            await loadSensorList(); // Recargar la lista de sensores
         } else {
-            throw new Error('Error al actualizar el nombre del sensor');
+            throw new Error(data.error || 'Error al actualizar el nombre');
         }
     } catch (error) {
-        showError('Error al actualizar el nombre del sensor');
+        showError('Error al actualizar el nombre del sensor: ' + error.message);
+        console.error(error);
     }
 }
 
@@ -135,89 +166,93 @@ function updateLivePreview() {
 }
 // Gestión de sensores
 async function loadSensorList() {
-    const sensorList = document.getElementById('sensor-list');
-    if (!sensorList) return;
-
-    showLoading('Cargando sensores...');
     try {
-        const response = await fetch('/api/sensor_videos');
-        const currentVideos = await response.json();
-        const videoMap = new Map(currentVideos.map(v => [v.sensor_id, v]));
-
-        sensorList.innerHTML = '';
+        // Obtener información de videos de sensores
+        const videosResponse = await fetch('/api/sensor_videos');
+        const videos = await videosResponse.json();
+        
+        // Obtener información de etiquetas de sensores
+        const etiquetasResponse = await fetch('/api/etiquetas-sensores');
+        const etiquetas = await etiquetasResponse.json();
+        
+        // Crear un mapa de videos por sensor_id
+        const videoMap = new Map(videos.map(v => [v.sensor_id, v]));
+        // Crear un mapa de etiquetas por gpio_pin
+        const etiquetaMap = new Map(etiquetas.map(e => [e.gpio_pin, e]));
+        
+        // Obtener el contenedor
+        const container = document.getElementById('sensor-list');
+        if (!container) return;
+        
+        // Limpiar el contenedor
+        container.innerHTML = '';
+        
+        // Crear y agregar tarjetas para cada sensor
         SENSOR_PINS.forEach(sensorId => {
-            const videoInfo = videoMap.get(sensorId);
-            const card = createSensorCard(sensorId, videoInfo);
-            sensorList.appendChild(card);
+            const videoInfo = videoMap.get(sensorId) || {};
+            const etiqueta = etiquetaMap.get(sensorId) || {};
+            const card = createSensorCard(sensorId, videoInfo, etiqueta);
+            container.appendChild(card);
         });
+
+        showSuccess('Sensores cargados correctamente');
     } catch (error) {
-        console.error('Error:', error);
-        showError('Error cargando sensores');
+        console.error('Error cargando lista de sensores:', error);
+        showError('Error al cargar la lista de sensores');
     } finally {
         hideLoading();
     }
 }
 
-
-function createSensorCard(sensorId, videoInfo) {
-    const sensorMapping = {
-        17: '1', 27: '2', 5: '3', 6: '4', 13: '5', 
-        18: '6', 22: '7', 26: '8', 19: '9'
-    };
-
-    // Obtener nombre de fantasía del video si no hay etiqueta
-    const videoName = videoInfo?.video_path ? 
-        videoInfo.video_path.split('/').pop().replace('.mp4', '') : '';
-    const displayName = videoInfo?.etiqueta || videoName || 'Sin nombre';
-
+function createSensorCard(sensorId, videoInfo = {}, etiqueta = {}) {
     const card = document.createElement('div');
     card.className = 'sensor-card';
     
+    // Escapar la ruta del video para usarla en el onclick
+    const videoPath = videoInfo?.video_path ? videoInfo.video_path.replace(/'/g, "\\'") : '';
+    
     card.innerHTML = `
-        <div class="sensor-header">
-            <h3 class="sensor-fixed-name">Sensor ${sensorMapping[sensorId]}</h3>
-            <div class="sensor-name-controls">
+        <div class="sensor-info">
+            <h3>${etiqueta?.sensor_numero || `Sensor ${sensorId}`}</h3>
+            <div class="gpio-info">GPIO ${sensorId}</div>
+            <div class="form-group">
+                <label>Nombre de fantasía:</label>
                 <input type="text" 
-                    class="sensor-campaign-input"
-                    placeholder="Nombre para campaña/estadísticas"
-                    value="${displayName}"
-                    id="sensor-name-${sensorId}">
-                <button class="button small" 
-                    onclick="updateSensorName(${sensorId}, document.getElementById('sensor-name-${sensorId}').value)">
-                    Guardar Nombre
-                </button>
+                       class="sensor-name" 
+                       value="${etiqueta?.nombre_fantasia || ''}" 
+                       placeholder="Nombre personalizado">
+                <button class="save-name btn btn-primary">Guardar</button>
+            </div>
+            <div class="video-info">
+                <p>Video actual: ${videoInfo?.video_path ? videoInfo.video_path.split('/').pop() : 'Sin video'}</p>
+                <input type="file" id="video-${sensorId}" accept="video/*">
+                <div class="file-name">Ningún archivo seleccionado</div>
+                <div class="button-group">
+                    <button onclick="assignVideo(${sensorId})" class="btn btn-primary">Subir y Asignar Video</button>
+                    ${videoInfo?.video_path ? `
+                        <button onclick="showPreview('${videoPath}')" class="btn btn-success">Ver Preview</button>
+                        <button onclick="removeVideo(${sensorId})" class="btn btn-danger">Quitar Video</button>
+                    ` : ''}
+                </div>
             </div>
         </div>
-        <div class="sensor-info">
-            <p class="sensor-label">ID: GPIO${sensorId}</p>
-            <p class="sensor-name-display">Nombre actual: <strong>${displayName}</strong></p>
-            <p>Video actual: ${videoInfo ? videoInfo.video_path.split('/').pop() : 'Sin video'}</p>
-            <input type="file" id="video-${sensorId}" accept="video/*">
-            <button class="button" onclick="assignVideo(${sensorId})">
-                ${videoInfo ? 'Cambiar Video' : 'Asignar Video'}
-            </button>
-            ${videoInfo ? `
-                <button class="button preview" onclick="showPreview('/static/${videoInfo.video_path}')">
-                    Ver Preview
-                </button>
-                <button class="button delete" onclick="removeVideo(${sensorId})">
-                    Eliminar
-                </button>
-            ` : ''}
-            ${videoInfo ? `
-                <div class="audio-control">
-                    <label>
-                        <input type="checkbox" 
-                               onchange="toggleMute(${sensorId}, this.checked)"
-                               ${localStorage.getItem(`sensor_${sensorId}_muted`) === 'true' ? 'checked' : ''}>
-                        Silenciar
-                    </label>
-                </div>
-            ` : ''}
-        </div>
     `;
+
+    // Configurar el guardado del nombre
+    const nameInput = card.querySelector('.sensor-name');
+    const saveButton = card.querySelector('.save-name');
+    
+    if (saveButton && nameInput) {
+        saveButton.addEventListener('click', async () => {
+            await updateSensorName(sensorId, nameInput.value);
+        });
+    }
+
     return card;
 }
+
+
+
 
 function showExtraContentInfo() {
     const extraContentSection = document.getElementById('extra-content-section');
@@ -251,34 +286,44 @@ function showExtraContentInfo() {
 
 // Funciones de Preview de Video
 function showPreview(videoPath) {
-    const modal = document.getElementById('preview-modal');
-    const video = document.getElementById('preview-video');
+    const previewContainer = document.getElementById('videoModal');
+    const previewVideo = document.getElementById('previewVideo');
     
-    if (!modal || !video) {
+    if (!previewContainer || !previewVideo) {
         console.error('Elementos de preview no encontrados');
+        showError('Error al mostrar el preview');
         return;
     }
+
+    // Asegurar que la ruta del video sea correcta
+    const fullPath = videoPath.startsWith('/static/') ? videoPath : `/static/${videoPath}`;
     
-    video.src = videoPath;
-    modal.style.display = 'flex';
-    video.play().catch(() => {
-        console.log('Autoplay no permitido');
+    previewVideo.src = fullPath;
+    previewContainer.style.display = 'block';
+    
+    // Intentar reproducir el video
+    previewVideo.play().catch(error => {
+        console.error('Error reproduciendo video:', error);
+        showError('Error al reproducir el video');
     });
 }
 
 function closePreview() {
-    const modal = document.getElementById('preview-modal');
-    const video = document.getElementById('preview-video');
+    const previewContainer = document.getElementById('videoModal');
+    const previewVideo = document.getElementById('previewVideo');
     
-    if (video) {
-        video.pause();
-        video.src = '';
+    if (previewVideo) {
+        previewVideo.pause();
+        previewVideo.src = '';
     }
-    if (modal) {
-        modal.style.display = 'none';
+    
+    if (previewContainer) {
+        previewContainer.style.display = 'none';
     }
 }
+
 // Gestión de videos
+
 async function assignVideo(sensorId) {
     const fileInput = document.getElementById(`video-${sensorId}`);
     if (!fileInput?.files.length) {
@@ -299,6 +344,9 @@ async function assignVideo(sensorId) {
 
         if (response.ok) {
             showSuccess('Video asignado correctamente');
+            // Actualizar el nombre por defecto con el nombre del archivo
+            const fileName = fileInput.files[0].name.replace('.mp4', '');
+            await updateSensorName(sensorId, fileName);
             await loadSensorList();
         } else {
             throw new Error('Error en la subida');
@@ -545,11 +593,11 @@ function hideLoading() {
 }
 
 function showError(message) {
-    alert(message);
+    showNotification(message, 'error');
 }
 
 function showSuccess(message) {
-    alert(message);
+    showNotification(message, 'success');
 }
 
 // Manejo de sesión
@@ -602,3 +650,15 @@ async function updateExtraContent() {
 
 
 document.addEventListener('DOMContentLoaded', showExtraContentInfo);
+
+document.addEventListener('DOMContentLoaded', () => {
+    const closeButtons = document.querySelectorAll('.close');
+    closeButtons.forEach(button => {
+        button.addEventListener('click', closePreview);
+    });
+
+    // Cerrar con la tecla Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closePreview();
+    });
+});

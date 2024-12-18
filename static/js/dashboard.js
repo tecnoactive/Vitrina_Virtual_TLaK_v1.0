@@ -1,292 +1,207 @@
 let charts = {};
 
+// Inicializar Flatpickr para los selectores de fecha
 document.addEventListener('DOMContentLoaded', () => {
-    initializeDashboard();
-    loadStats();
-    // Actualizar cada 5 minutos
-    setInterval(loadStats, 300000);
+    initializeDatePickers();
+    setupEventListeners();
+    // Cargar datos con el período "week" por defecto
+    const periodSelect = document.getElementById('period-select');
+    if (periodSelect) {
+        periodSelect.value = 'week';
+        applyFilters();
+    }
 });
 
-function initializeDashboard() {
-    setDefaultDates();
-    handlePeriodChange();
+function initializeDatePickers() {
+    const dateConfig = {
+        locale: 'es',
+        dateFormat: 'Y-m-d',
+        altInput: true,
+        altFormat: 'd/m/Y',
+        maxDate: 'today'
+    };
+
+    flatpickr('#date-from', dateConfig);
+    flatpickr('#date-to', dateConfig);
 }
 
-function setDefaultDates() {
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    
-    const dateFrom = document.getElementById('date-from');
-    const dateTo = document.getElementById('date-to');
-    
-    if (dateFrom && dateTo) {
-        dateFrom.value = formatDateForInput(firstDay);
-        dateTo.value = formatDateForInput(today);
+function setupEventListeners() {
+    const periodSelect = document.getElementById('period-select');
+    if (periodSelect) {
+        periodSelect.addEventListener('change', handlePeriodChange);
     }
 }
 
 function handlePeriodChange() {
-    const select = document.getElementById('period-select');
+    const periodSelect = document.getElementById('period-select');
     const customDates = document.getElementById('custom-dates');
     
-    if (!select || !customDates) return;
-    
-    customDates.style.display = select.value === 'custom' ? 'block' : 'none';
-    
-    if (select.value !== 'custom') {
-        loadStats();
+    if (customDates) {
+        customDates.style.display = periodSelect.value === 'custom' ? 'block' : 'none';
+    }
+
+    if (periodSelect.value !== 'custom') {
+        applyFilters();
     }
 }
 
-async function loadStats() {
-    const params = getDateParams();
-    showLoading();
+async function applyFilters() {
+    const periodSelect = document.getElementById('period-select');
+    const dateFrom = document.getElementById('date-from');
+    const dateTo = document.getElementById('date-to');
     
-    try {
-        console.log('Solicitando datos con parámetros:', params);
-        const response = await fetch(`/api/stats?${params}`);
+    let params = new URLSearchParams();
+    
+    if (periodSelect.value === 'custom') {
+        if (!dateFrom.value || !dateTo.value) {
+            showError('Por favor seleccione ambas fechas');
+            return;
+        }
+        params.append('from', `${dateFrom.value}T00:00:00`);
+        params.append('to', `${dateTo.value}T23:59:59`);
+    } else {
+        const now = new Date();
+        let from = new Date();
         
+        switch (periodSelect.value) {
+            case 'today':
+                from = new Date(now.setHours(0, 0, 0, 0));
+                break;
+            case 'week':
+                from.setDate(from.getDate() - 7);
+                break;
+            case 'month':
+                from.setDate(1);
+                break;
+            case 'year':
+                from.setMonth(0, 1);
+                break;
+        }
+        
+        params.append('from', from.toISOString().split('.')[0]);
+        params.append('to', now.toISOString().split('.')[0]);
+    }
+    
+    await loadDashboardData(params);
+}
+
+async function loadDashboardData(params = new URLSearchParams()) {
+    try {
+        const response = await fetch(`/api/dashboard-stats?${params.toString()}`);
         if (!response.ok) {
-            throw new Error(`Error HTTP: ${response.status}`);
+            throw new Error('Error al obtener los datos');
         }
         
         const data = await response.json();
-        console.log('Datos recibidos:', data);
-        
-        if (data.error) {
-            throw new Error(data.error);
-        }
-        
-        if (!data.product_stats || !data.versus_stats) {
-            console.error('Datos incompletos:', data);
-            throw new Error('Datos incompletos recibidos del servidor');
-        }
-        
         updateDashboard(data);
     } catch (error) {
-        console.error('Error cargando estadísticas:', error);
-        showError(`Error al cargar los datos: ${error.message}`);
-    } finally {
-        hideLoading();
+        console.error('Error:', error);
+        showError('Error al cargar los datos del dashboard');
     }
-}
-
-
-
-function getDateParams() {
-    const select = document.getElementById('period-select');
-    const params = new URLSearchParams();
-    
-    if (select.value === 'custom') {
-        const dateFrom = document.getElementById('date-from').value;
-        const dateTo = document.getElementById('date-to').value;
-        params.append('from', dateFrom);
-        params.append('to', dateTo);
-    } else {
-        const dates = calculateDates(select.value);
-        params.append('from', dates.from);
-        params.append('to', dates.to);
-    }
-    
-    return params.toString();
-}
-
-function calculateDates(period) {
-    const today = new Date();
-    let from = new Date();
-    
-    switch (period) {
-        case 'current-month':
-            from = new Date(today.getFullYear(), today.getMonth(), 1);
-            break;
-        case 'last-month':
-            from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-            today.setDate(0); // Último día del mes anterior
-            break;
-        case 'last-3-months':
-            from = new Date(today.getFullYear(), today.getMonth() - 3, 1);
-            break;
-    }
-    
-    return {
-        from: formatDateForInput(from),
-        to: formatDateForInput(today)
-    };
 }
 
 function updateDashboard(data) {
-    console.log('Actualizando dashboard con datos:', data);
-    try {
-        updateStats(data);
-        if (data.product_stats) {
-            console.log('Actualizando estadísticas de productos:', data.product_stats);
-            updateProductsChart(data.product_stats);
-        }
-        if (data.versus_stats) {
-            console.log('Actualizando estadísticas de versus:', data.versus_stats);
-            updateVersusChart(data.versus_stats);
-        }
-        if (data.hourly_stats) {
-            console.log('Actualizando estadísticas por hora:', data.hourly_stats);
-            updateHourlyChart(data.hourly_stats);
-        }
-        if (data.history) {
-            console.log('Actualizando historial:', data.history);
-            updateHistoryTable(data.history);
-        }
-        updateTables(data);
-    } catch (error) {
-        console.error('Error en updateDashboard:', error);
-    }
-}
+    // Actualizar contadores principales
+    document.getElementById('total-activations').textContent = formatNumber(data.total_activaciones || 0);
+    document.getElementById('today-activations').textContent = formatNumber(data.activaciones_hoy || 0);
+    document.getElementById('week-activations').textContent = formatNumber(data.activaciones_semana || 0);
+    document.getElementById('month-activations').textContent = formatNumber(data.activaciones_mes || 0);
 
-function updateStats(data) {
-    try {
-        const elements = {
-            'total-activations': data.total_activations || 0,
-            'total-versus': data.total_versus || 0,
-            'most-popular': data.most_popular_product || '-',
-            'most-common-versus': data.most_common_versus || '-'
-        };
-
-        for (const [id, value] of Object.entries(elements)) {
-            const element = document.getElementById(id);
-            if (element) {
-                element.textContent = value;
-            } else {
-                console.warn(`Elemento no encontrado: ${id}`);
-            }
-        }
-    } catch (error) {
-        console.error('Error en updateStats:', error);
-    }
-}
-
-function updateProductsChart(stats) {
-    const ctx = document.getElementById('products-chart')?.getContext('2d');
-    if (!ctx) return;
+    // Actualizar producto más popular
+    const popularProduct = document.getElementById('popular-product-name');
+    const popularActivations = document.getElementById('popular-product-activations');
     
-    if (charts.products) charts.products.destroy();
-    
-    charts.products = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: stats.map(s => s.nombre || `Sensor ${s.sensor_id}`),
-            datasets: [{
-                label: 'Activaciones',
-                data: stats.map(s => s.activations),
-                backgroundColor: '#3b82f6',
-                borderColor: '#2563eb',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    });
-}
-
-function updateVersusChart(stats) {
-    const ctx = document.getElementById('versus-chart')?.getContext('2d');
-    if (!ctx) return;
-    
-    if (charts.versus) charts.versus.destroy();
-    
-    charts.versus = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: stats.map(s => `${s.nombre1 || s.sensor1_id} vs ${s.nombre2 || s.sensor2_id}`),
-            datasets: [{
-                label: 'Versus',
-                data: stats.map(s => s.count),
-                backgroundColor: '#ef4444',
-                borderColor: '#dc2626',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    });
-}
-
-function updateTables(data) {
-    updateProductsTable(data.product_stats);
-    updateVersusTable(data.versus_stats);
-}
-
-function updateProductsTable(stats) {
-    const tbody = document.getElementById('products-table');
-    if (!tbody || !stats) return;
-    
-    tbody.innerHTML = stats.map(stat => `
-        <tr>
-            <td>${stat.nombre || `Sensor ${stat.sensor_id}`}</td>
-            <td>${stat.activations}</td>
-            <td>${formatDate(stat.last_activation)}</td>
-        </tr>
-    `).join('');
-}
-
-function updateVersusTable(stats) {
-    const tbody = document.getElementById('versus-table');
-    if (!tbody || !stats) return;
-    
-    tbody.innerHTML = stats.map(stat => `
-        <tr>
-            <td>${stat.nombre1 || stat.sensor1_id} vs ${stat.nombre2 || stat.sensor2_id}</td>
-            <td>${stat.count}</td>
-            <td>${formatDate(stat.last_versus)}</td>
-        </tr>
-    `).join('');
-}
-
-function updateElement(id, value) {
-    const element = document.getElementById(id);
-    if (element) element.textContent = value;
-}
-
-function updateHourlyChart(stats) {
-    const ctx = document.getElementById('hourly-chart')?.getContext('2d');
-    if (!ctx) return;
-    
-    if (charts.hourly) {
-        charts.hourly.destroy();
+    if (data.ranking && data.ranking.length > 0) {
+        popularProduct.textContent = data.ranking[0].nombre_fantasia || `Sensor ${data.ranking[0].sensor_id}`;
+        popularActivations.textContent = formatNumber(data.ranking[0].total);
+    } else {
+        popularProduct.textContent = 'Sin datos';
+        popularActivations.textContent = '0';
     }
 
-    const hours = Array.from({length: 24}, (_, i) => 
-        `${i.toString().padStart(2, '0')}:00`
-    );
+    // Actualizar gráficos
+    updateCharts(data);
     
-    charts.hourly = new Chart(ctx, {
+    // Actualizar ranking
+    updateRanking(data.ranking || []);
+    
+    // Actualizar historial
+    updateHistory(data.historial || []);
+}
+
+
+function updateCharts(data) {
+    // Gráfico de activaciones por día
+    updateDailyChart(data.activaciones_por_dia);
+    
+    // Gráfico de sensores
+    updateSensorChart(data.activaciones_por_sensor);
+}
+
+function updateDailyChart(data) {
+    const ctx = document.getElementById('activationsChart');
+    if (!ctx) return;
+
+    if (charts.daily) {
+        charts.daily.destroy();
+    }
+
+    charts.daily = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: hours,
+            labels: data.map(d => formatDate(d.fecha)),
             datasets: [{
-                label: 'Activaciones',
-                data: stats.hourly_stats || Array(24).fill(0),
-                borderColor: '#10b981',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                tension: 0.4,
-                fill: true
+                label: 'Activaciones por Día',
+                data: data.map(d => d.total),
+                borderColor: '#3498db',
+                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateSensorChart(data) {
+    const ctx = document.getElementById('sensorChart');
+    if (!ctx) return;
+
+    if (charts.sensor) {
+        charts.sensor.destroy();
+    }
+
+    charts.sensor = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.nombre_fantasia || `Sensor ${d.sensor_id}`),
+            datasets: [{
+                label: 'Activaciones por Sensor',
+                data: data.map(d => d.total),
+                backgroundColor: 'rgba(52, 152, 219, 0.8)',
+                borderColor: '#2980b9',
+                borderWidth: 1
             }]
         },
         options: {
@@ -309,27 +224,43 @@ function updateHourlyChart(stats) {
     });
 }
 
-function updateHistoryTable(history) {
-    const tbody = document.getElementById('history-table');
-    if (!tbody || !history) return;
-    
-    tbody.innerHTML = history.map(item => `
+function updateRanking(data) {
+    const tbody = document.getElementById('ranking-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = data.map((item, index) => `
         <tr>
-            <td>Sensor ${item.sensor_id}</td>
-            <td>${item.nombre || 'Sin nombre'}</td>
-            <td>${item.video_path?.split('/').pop() || '-'}</td>
-            <td>${formatDate(item.fecha_inicio)}</td>
-            <td>${formatDate(item.fecha_fin) || 'Actual'}</td>
-            <td>${formatNumber(item.total_activaciones)}</td>
-            <td>${formatNumber(item.promedio_diario)}</td>
+            <td>${index + 1}</td>
+            <td>${item.nombre_fantasia || `Sensor ${item.sensor_id}`}</td>
+            <td>${formatNumber(item.total)}</td>
+            <td>${formatDate(item.ultima_activacion)}</td>
         </tr>
     `).join('');
 }
 
+function updateHistory(data) {
+    const tbody = document.getElementById('history-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = data.map(item => `
+        <tr>
+            <td>${item.nombre_fantasia || `Sensor ${item.sensor_id}`}</td>
+            <td>${item.video_path.split('/').pop()}</td>
+            <td>${formatDate(item.fecha_inicio)}</td>
+            <td>${formatDate(item.fecha_fin)}</td>
+            <td>${formatNumber(item.total_activaciones)}</td>
+            <td>${item.promedio_diario.toFixed(2)}</td>
+        </tr>
+    `).join('');
+}
+
+function formatNumber(num) {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 function formatDate(dateString) {
     if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleString('es-ES', {
+    return new Date(dateString).toLocaleString('es-ES', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -338,54 +269,32 @@ function formatDate(dateString) {
     });
 }
 
-function formatDateForInput(date) {
-    return date.toISOString().split('T')[0];
-}
-
-function showLoading() {
-    const loading = document.getElementById('loading');
-    if (loading) loading.style.display = 'flex';
-}
-
-function hideLoading() {
-    const loading = document.getElementById('loading');
-    if (loading) loading.style.display = 'none';
+function updateElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.textContent = value;
+    }
 }
 
 function showError(message) {
-    // Puedes personalizar cómo mostrar los errores
-    alert(message);
+    const errorDiv = document.getElementById('error-message');
+    if (errorDiv) {
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+        setTimeout(() => {
+            errorDiv.style.display = 'none';
+        }, 5000);
+    }
 }
 
 async function handleLogout() {
     try {
-        const response = await fetch('/api/logout', { 
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        await fetch('/api/logout', {
+            method: 'POST'
         });
-        
-        if (response.ok) {
-            window.location.href = '/login';
-        } else {
-            throw new Error('Error al cerrar sesión');
-        }
+        window.location.href = '/login';
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error al cerrar sesión:', error);
         showError('Error al cerrar sesión');
     }
 }
-
-// Función de utilidad para formatear números grandes
-function formatNumber(num) {
-    return new Intl.NumberFormat('es-ES').format(num);
-}
-
-// Evento para tecla Escape (cerrar modales, etc)
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        const loading = document.getElementById('loading');
-        if (loading) loading.style.display = 'none';
-    }
-});

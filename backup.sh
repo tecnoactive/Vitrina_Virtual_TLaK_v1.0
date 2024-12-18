@@ -1,4 +1,4 @@
-# backup.sh
+i# backup.sh
 #!/bin/bash
 
 echo "Nombre para esta versión de respaldo:"
