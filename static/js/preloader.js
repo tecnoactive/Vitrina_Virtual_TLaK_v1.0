@@ -11,8 +11,8 @@ class VideoPreloader {
         loadingScreen.id = 'loading-screen';
         loadingScreen.innerHTML = `
             <div class="loading-content">
-                <h1>Iniciando Sistema TecnoActive</h1><br>
-                <h2>Vitrina Digital</h2>
+                <h1>Iniciando Sistema </h1><br>
+                <h2>Vitrina Digital Dermocoaching by Salcobrand</h2>
                 <div class="loading-bar">
                     <div class="loading-bar-progress"></div>
                 </div>

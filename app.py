@@ -15,9 +15,9 @@ app = Flask(__name__)
 app.secret_key = 'admin'
 
 # Configuración
-UPLOAD_FOLDER = 'static/videos'
+UPLOAD_FOLDER = '/home/pi/vitrina/static/videos'
 ALLOWED_EXTENSIONS = {'mp4', 'webm', 'mov'}
-SENSOR_PINS = [17, 27, 4, 5, 6, 13, 18, 22, 26, 19]
+SENSOR_PINS = [17, 27, 5, 6, 13, 18, 22, 26, 19]
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -31,7 +31,7 @@ def setup_gpio():
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 def init_db():
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
 
                 # Mapeo correcto de sensores
@@ -143,7 +143,7 @@ def login_page():
 @login_required
 def panel():
     try:
-        conn = sqlite3.connect('vitrina.db')
+        conn = sqlite3.connect('/home/pi/vitrina/vitrina.db')
         cursor = conn.cursor()
         
         # Obtener información de los sensores
@@ -198,7 +198,7 @@ def update_sensor_name():
         if not sensor_id or new_name is None:
             return jsonify({'error': 'Se requiere sensor_id y new_name'}), 400
             
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('''
                 UPDATE etiquetas_sensores 
@@ -238,7 +238,7 @@ def get_sensor_status(sensor_id):
 @login_required
 def remove_sensor_video(sensor_id):
     try:
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             
             # Obtener el video actual
@@ -281,7 +281,7 @@ def upload_background_video():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             # Obtener el máximo orden actual
             c.execute('SELECT MAX(orden) FROM background_videos')
@@ -303,7 +303,7 @@ def upload_background_video():
 @login_required
 def remove_background_video(video_id):
     try:
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             # Obtener ruta del video
             c.execute('SELECT video_path FROM background_videos WHERE id = ?', (video_id,))
@@ -362,7 +362,7 @@ def sensor_status():
 
 @app.route('/api/etiquetas-sensores', methods=['GET'])
 def obtener_etiquetas_sensores():
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         c.execute('''
             SELECT 
@@ -394,7 +394,7 @@ def actualizar_etiqueta_sensor():
     if not gpio_pin:
         return jsonify({'error': 'Falta el número de GPIO'}), 400
         
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         c.execute('''
             UPDATE etiquetas_sensores 
@@ -407,7 +407,7 @@ def actualizar_etiqueta_sensor():
 
 @app.route('/api/sensor_video/<int:sensor_id>')
 def get_sensor_video(sensor_id):
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         c.execute('''
             SELECT sv.video_path, sn.nombre_fantasia 
@@ -423,7 +423,7 @@ def get_sensor_video(sensor_id):
 
 @app.route('/api/background_videos')
 def get_background_videos():
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         # Añadir COALESCE para manejar valores NULL en orden
         c.execute('''
@@ -446,7 +446,7 @@ def get_background_videos():
 @app.route('/api/sensor_videos')
 @login_required
 def get_all_sensor_videos():
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         c.execute('''
             SELECT 
@@ -469,28 +469,65 @@ def get_all_sensor_videos():
 @app.route('/api/upload_video', methods=['POST'])
 @login_required
 def upload_video():
-    if 'video' not in request.files:
-        return jsonify({'error': 'No video file'}), 400
+    try:
+        # Verificar si existe el directorio de subida
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            app.logger.info(f"Directorio creado: {app.config['UPLOAD_FOLDER']}")
+
+        if 'video' not in request.files:
+            app.logger.error('No video file in request')
+            return jsonify({'error': 'No video file'}), 400
     
-    file = request.files['video']
-    sensor_id = request.form.get('sensor_id')
+        file = request.files['video']
+        sensor_id = request.form.get('sensor_id')
+        
+        if not sensor_id:
+            app.logger.error('No sensor_id provided')
+            return jsonify({'error': 'No sensor ID provided'}), 400
     
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-        
-    if file:
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        with sqlite3.connect('vitrina.db') as conn:
-            c = conn.cursor()
-            c.execute('INSERT OR REPLACE INTO sensor_videos (sensor_id, video_path) VALUES (?, ?)',
-                     (sensor_id, os.path.join('videos', filename)))
-            conn.commit()
+        if file.filename == '':
+            app.logger.error('No selected file')
+            return jsonify({'error': 'No selected file'}), 400
             
-        return jsonify({'success': True})
-    
+        if file:
+            # Asegurar que el nombre del archivo sea seguro
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            # Intentar guardar el archivo
+            try:
+                file.save(filepath)
+                app.logger.info(f"Archivo guardado: {filepath}")
+                
+                # Verificar que el archivo se guardó correctamente
+                if not os.path.exists(filepath):
+                    raise Exception('File was not saved successfully')
+                
+                # Verificar permisos del archivo
+                os.chmod(filepath, 0o644)
+                
+            except Exception as e:
+                app.logger.error(f"Error guardando archivo: {str(e)}")
+                return jsonify({'error': f'Error saving file: {str(e)}'}), 500
+            
+            try:
+                with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
+                    c = conn.cursor()
+                    c.execute('INSERT OR REPLACE INTO sensor_videos (sensor_id, video_path) VALUES (?, ?)',
+                             (sensor_id, os.path.join('videos', filename)))
+                    conn.commit()
+                    app.logger.info(f"Base de datos actualizada para sensor {sensor_id}")
+                    
+                return jsonify({'success': True})
+            except sqlite3.Error as e:
+                app.logger.error(f"Error de base de datos: {str(e)}")
+                return jsonify({'error': f'Database error: {str(e)}'}), 500
+                
+    except Exception as e:
+        app.logger.error(f"Error general en upload_video: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/update-versus-mode', methods=['POST'])
 @login_required 
@@ -502,7 +539,7 @@ def update_versus_mode():
         if not 1 <= mode <= 4:
             return jsonify({'error': 'Modo inválido. Debe ser entre 1 y 4'}), 400
             
-        with sqlite3.connect('vitrina.db') as conn:  
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:  
             c = conn.cursor()
             c.execute('UPDATE system_config SET value = ? WHERE key = ?', (str(mode), 'versus_mode'))
             conn.commit()
@@ -515,7 +552,7 @@ def update_versus_mode():
 @app.route('/api/get-current-mode')
 def get_current_mode():
     try:
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('SELECT value FROM system_config WHERE key = ?', ('versus_mode',))
             result = c.fetchone()
@@ -525,10 +562,35 @@ def get_current_mode():
         print(f"Error al obtener modo actual: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/reset_stats', methods=['POST'])
+@login_required
+def reset_stats():
+    try:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
+            c = conn.cursor()
+            # Limpiar tabla de activaciones
+            c.execute('DELETE FROM activaciones')
+            # Limpiar tabla de versus
+            c.execute('DELETE FROM versus')
+            conn.commit()
+            
+        return jsonify({
+            'success': True, 
+            'message': 'Estadísticas reiniciadas correctamente'
+        })
+    
+    
+    except Exception as e:
+        app.logger.error(f"Error resetting stats: {str(e)}")
+        return jsonify({
+            'success': False, 
+            'error': str(e)
+        }), 500
+
 @app.route('/api/system-config')
 def get_system_config():
     try:
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('SELECT key, value FROM system_config')
             config = dict(c.fetchall())
@@ -539,7 +601,7 @@ def get_system_config():
         return jsonify({'error': 'Error al obtener configuración'}), 500
 
 def register_sensor_activity(active_sensors, previous_sensors):
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         for sensor in active_sensors:
             if sensor not in previous_sensors:
@@ -554,7 +616,7 @@ def register_sensor_activity(active_sensors, previous_sensors):
 def load_system_config():
     global current_mode
     try:
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('SELECT value FROM system_config WHERE key = ?', ('versus_mode',))
             result = c.fetchone()
@@ -567,7 +629,7 @@ def load_system_config():
 @login_required
 def get_stats():
     try:
-        conn = sqlite3.connect('vitrina.db')
+        conn = sqlite3.connect('/home/pi/vitrina/vitrina.db')
         cursor = conn.cursor()
         
         # Total activaciones
@@ -621,7 +683,7 @@ def toggle_debug():
         data = request.json
         enabled = data.get('enabled', False)
         
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('UPDATE system_config SET value = ? WHERE key = ?', 
                      (str(enabled).lower(), 'debug_enabled'))
@@ -634,7 +696,7 @@ def toggle_debug():
     
 @app.route('/api/public/sensor_videos')
 def get_public_sensor_videos():
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         c.execute('''
             SELECT 
@@ -651,7 +713,7 @@ def get_public_sensor_videos():
 
 @app.route('/api/public/background_videos')
 def get_public_background_videos():
-    with sqlite3.connect('vitrina.db') as conn:
+    with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         c.execute('SELECT id, video_path, orden FROM background_videos ORDER BY orden')
         videos = [{'id': row[0], 'video_path': row[1], 'orden': row[2]} 
@@ -666,7 +728,7 @@ def move_background_video():
         video_id = data.get('video_id')
         direction = data.get('direction')
         
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             # Obtener orden actual
             c.execute('SELECT orden FROM background_videos WHERE id = ?', (video_id,))
@@ -701,7 +763,7 @@ def move_background_video():
 @app.route('/api/extra-content')
 def get_extra_content():
     try:
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('''SELECT content_path, position, content_type 
                         FROM extra_content 
@@ -786,7 +848,7 @@ def get_dashboard_stats():
             from_date = today.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d 00:00:00')
             to_date = today.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%d 23:59:59')
             
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             
             # Total de activaciones en el período
@@ -954,7 +1016,7 @@ def update_extra_content():
         file.save(content_path)
         
         # Actualizar la base de datos
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('''
                 INSERT INTO extra_content (content_path, position, content_type) 
@@ -984,7 +1046,7 @@ def register_activation():
         if duration < 5000:  # Menos de 5 segundos
             return jsonify({'success': False, 'message': 'Duration too short'}), 200
             
-        with sqlite3.connect('vitrina.db') as conn:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('''
                 INSERT INTO activaciones (sensor_id, duration) 
@@ -997,23 +1059,12 @@ def register_activation():
         app.logger.error(f"Error registering activation: {str(e)}")
         return jsonify({'error': str(e)}), 500
     
-@app.route('/api/reset_stats', methods=['POST'])
-@login_required
-def reset_stats():
-    try:
-        with sqlite3.connect('vitrina.db') as conn:
-            c = conn.cursor()
-            c.execute('DELETE FROM activaciones')
-            conn.commit()
-        return jsonify({'success': True, 'message': 'Estadísticas reiniciadas'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/activations')
 @login_required
 def get_activations():
     try:
-        conn = sqlite3.connect('vitrina.db')
+        conn = sqlite3.connect('/home/pi/vitrina/vitrina.db')
         cursor = conn.cursor()
         
         # Obtener activaciones de los últimos 7 días

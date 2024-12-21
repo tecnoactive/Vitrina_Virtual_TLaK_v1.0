@@ -342,20 +342,54 @@ async function assignVideo(sensorId) {
             body: formData
         });
 
-        if (response.ok) {
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Error en la subida');
+        }
+
+        if (data.success) {
             showSuccess('Video asignado correctamente');
-            // Actualizar el nombre por defecto con el nombre del archivo
-            const fileName = fileInput.files[0].name.replace('.mp4', '');
-            await updateSensorName(sensorId, fileName);
+            // Actualizar el nombre del video en la interfaz
+            const videoNameElement = document.getElementById(`current-video-${sensorId}`);
+            if (videoNameElement) {
+                videoNameElement.textContent = fileInput.files[0].name;
+            }
+            // Limpiar el input
+            fileInput.value = '';
+            // Actualizar la lista de sensores
             await loadSensorList();
         } else {
-            throw new Error('Error en la subida');
+            throw new Error(data.error || 'Error desconocido');
         }
     } catch (error) {
         console.error('Error:', error);
-        showError('Error al asignar el video');
+        showError(`Error al asignar el video: ${error.message}`);
     } finally {
         hideLoading();
+    }
+}
+async function resetStats() {
+    if (!confirm('¿Estás seguro de que quieres reiniciar todas las estadísticas? Esta acción no se puede deshacer.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/reset_stats', {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Recargar los datos
+            await applyFilters();
+            alert('Estadísticas reiniciadas correctamente');
+        } else {
+            throw new Error(data.error || 'Error desconocido');
+        }
+    } catch (error) {
+        alert('Error al reiniciar estadísticas: ' + error.message);
     }
 }
 
