@@ -3,179 +3,172 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel de Control - Vitrina Digital</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/panel.css') }}">
-    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <title>Panel de Control - Sistema de Activación</title>
+    <link rel="stylesheet" href="/static/css/panel.css">
+    <!-- React y dependencias -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <!-- Loading Overlay -->
-    <div id="loading" class="loading">
-        <div class="loading-content">
-            <h3>Procesando...</h3>
-            <p>Por favor espere</p>
-        </div>
-    </div>
-
-    <!-- Barra de Navegación -->
+    <!-- Barra de navegación -->
     <nav class="nav-menu">
         <div>
             <img src="/static/images/logo_.png" alt="Logo" class="logo">
-            <a href="/dashboard">Dashboard</a>
+            <a href="#system">Sistema</a>
             <a href="#sensors">Sensores</a>
-            <a href="#background">Videos de Fondo</a>
+            <a href="#monitor">Monitor</a>
+            <a href="/dashboard">Dashboard</a>
         </div>
-        <button onclick="resetStats()" class="btn btn-danger">
-            Resetear Estadísticas
-        </button>
-        <button onclick="handleLogout()" class="btn btn-danger">Cerrar Sesión</button>
+        <div>
+            <button onclick="handleLogout()" class="btn-action danger">Cerrar Sesión</button>
+        </div>
     </nav>
 
-    <!-- Contenido Principal -->
     <div class="container">
         <!-- Configuración del Sistema -->
-        <div class="card">
+        <div class="system-config" id="system">
             <h2>Configuración del Sistema</h2>
-            <div class="system-controls">
-                <!-- Control Debug -->
-                <div class="control-group">
+            
+            <div class="system-config-grid">
+                <!-- Debug Panel -->
+                <div class="config-section">
                     <h3>Debug Panel</h3>
-                    <button onclick="toggleDebugPanel()" class="btn btn-primary">
+                    <button class="btn-action primary" onclick="toggleDebugPanel()">
                         <span id="debug-status">Activar</span> Debug Panel
                     </button>
-                    <p id="current-mode"></p>
-                </div>
-                
-                <!-- Control Versus -->
-                <div class="control-group">
-                    <h3>Modo de Visualización</h3>
-                    <select id="versus-mode" onchange="updateVersusMode()">
-                        <option value="1">1 Sensor</option>
-                        <option value="2">2 Sensores</option>
-                        <option value="3">3 Sensores con Extra</option>
-                        <option value="4">4 Sensores</option>
-                    </select>
-                </div>
-        
-                <!-- Configuración Contenido Extra -->
-                <div id="extra-content-section" class="control-group" style="display: none;">
-                    <h3>Contenido Extra</h3>
-                    <div class="extra-content-controls">
-                        <select id="extra-position">
-                            <option value="top-right">Superior Derecha</option>
-                            <option value="top-left">Superior Izquierda</option>
-                            <option value="bottom-right">Inferior Derecha</option>
-                            <option value="bottom-left">Inferior Izquierda</option>
-                        </select>
-                        <input type="file" id="extra-content" accept="image/*,video/*">
-                        <button onclick="updateExtraContent()" class="button">
-                            Subir Contenido
-                        </button>
-                        <div class="extra-content-info"></div>
+                    <div class="current-state" id="debug-state">
+                        Estado actual: Desactivado
                     </div>
+                </div>
+
+                <!-- Modo de Visualización -->
+                <div class="config-section">
+                  <h3>Modo de Visualización</h3>
+                  <select class="select-control" id="versus-mode" onchange="updateVersusMode()">
+                      <option value="1">1 Sensor</option>
+                      <option value="2">2 Sensores</option>
+                      <option value="3">3 Sensores con Extra</option>
+                      <option value="4">4 Sensores</option>
+                  </select>
+                  <div class="current-state" id="current-mode">
+                      Vitrina en Modo 1 Sensor
+                  </div>
+              </div>
+              
+
+                <!-- Contenido Extra -->
+                <div class="config-section" id="extra-content-section">
+                    <h3>Contenido Extra</h3>
+                    <select class="select-control" id="extra-position">
+                        <option value="top-right">Superior Derecha</option>
+                        <option value="top-left">Superior Izquierda</option>
+                        <option value="bottom-right">Inferior Derecha</option>
+                        <option value="bottom-left">Inferior Izquierda</option>
+                    </select>
+                    <div class="file-input-wrapper">
+                        <label class="file-input-trigger" for="extra-content">
+                            Seleccionar archivo
+                        </label>
+                        <input type="file" id="extra-content" accept="image/*,video/*">
+                    </div>
+                    <button class="btn-action primary" onclick="updateExtraContent()">
+                        Subir Contenido
+                    </button>
                 </div>
             </div>
         </div>
 
         <!-- Gestión de Sensores -->
-        <div class="card" id="sensors">
-            <h2>Gestión de Sensores</h2>
-            <div id="sensor-list" class="sensor-grid">
-                {% for sensor in sensors %}
-                <div class="sensor-card">
-                    <h3>{{ sensor.sensor_numero }}</h3>
-                    <p>GPIO {{ sensor.gpio_pin }}</p>
-                    
-                    <div class="form-group">
-                        <label>Nombre de fantasía:</label>
-                        <input type="text" 
-                               class="form-control" 
-                               id="fantasy-name-{{ sensor.gpio_pin|string }}" 
-                               value="{{ sensor.nombre_fantasia }}"
-                               placeholder="Ingrese nombre"
-                               data-sensor-id="{{ sensor.gpio_pin|string }}">
-                        <button onclick="saveSensorName('{{ sensor.gpio_pin|string }}')" 
-                                class="btn btn-primary">Guardar</button>
-                    </div>
-
-                    <div class="video-section">
-                        <p class="current-video">
-                            Video actual: 
-                            <span id="current-video-{{ sensor.gpio_pin|string }}">
-                                {% if sensor.video_path %}
-                                    {{ sensor.video_path.split('/')[-1] }}
-                                {% else %}
-                                    Sin video
-                                {% endif %}
-                            </span>
-                        </p>
-                        
-                        <form id="upload-form-{{ sensor.gpio_pin|string }}" class="upload-form">
-                            <div class="file-input-container">
-                                <label for="video-file-{{ sensor.gpio_pin|string }}" class="file-label">
-                                    Seleccionar video
-                                </label>
-                                <input type="file" 
-                                       id="video-file-{{ sensor.gpio_pin|string }}" 
-                                       name="video"
-                                       class="file-input"
-                                       accept="video/mp4,video/webm,video/mov"
-                                       data-sensor-id="{{ sensor.gpio_pin|string }}">
-                                <span class="selected-file-name" id="selected-file-{{ sensor.gpio_pin|string }}">
-                                    Ningún archivo seleccionado
-                                </span>
-                            </div>
-                        </form>
-
-                        <div class="button-group">
-                            <button onclick="uploadAndAssignVideo('{{ sensor.gpio_pin|string }}')" 
-                                    class="btn btn-primary">Subir y Asignar Video</button>
-                            
-                            {% if sensor.video_path %}
-                            <button onclick="removeVideo('{{ sensor.gpio_pin|string }}')" 
-                                    class="btn btn-danger">Quitar Video</button>
-                            <button onclick="previewVideo('{{ sensor.video_path }}')" 
-                                    class="btn btn-info">Ver Preview</button>
-                            {% endif %}
+        <div class="sensor-management" id="sensors">
+          <h2>Gestión de Sensores</h2>
+          <div class="sensor-grid">
+              {% for sensor in sensors %}
+              <div class="sensor-card">
+                  <div class="sensor-info">
+                      <h3>Sensor {{ sensor.sensor_numero }}</h3>
+                      <div class="gpio-info">
+                          GPIO: {{ sensor.gpio_pin }}
+                      </div>
+                      
+                      <div class="form-group">
+                          <label for="fantasy-name-{{ sensor.gpio_pin }}">Nombre de Fantasía:</label>
+                          <input type="text" 
+                                 class="form-control" 
+                                 id="fantasy-name-{{ sensor.gpio_pin }}"
+                                 value="{{ sensor.nombre_fantasia }}"
+                                 placeholder="Ingrese un nombre">
+                          <button class="btn-action primary" 
+                                  onclick="saveSensorName('{{ sensor.gpio_pin }}')">
+                              Guardar Nombre
+                          </button>
+                      </div>
+      
+                      <div class="video-section">
+                          <div class="current-video">
+                              Video actual: 
+                              <span id="current-video-{{ sensor.gpio_pin }}">
+                                  {{ sensor.video_path if sensor.video_path else 'Sin video asignado' }}
+                              </span>
+                          </div>
+                          
+                          <div class="file-input-wrapper">
+                            <label class="file-input-trigger" for="video-file-{{ sensor.gpio_pin }}">
+                                Seleccionar video
+                            </label>
+                            <input type="file" 
+                                   id="video-file-{{ sensor.gpio_pin }}" 
+                                   class="file-input"
+                                   accept="video/*"
+                                   data-sensor-id="{{ sensor.gpio_pin }}"
+                                   style="display: none;">
+                            <span id="selected-file-{{ sensor.gpio_pin }}">Ningún archivo seleccionado</span>
                         </div>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <!-- Videos de Fondo -->
-        <div class="card" id="background">
-            <h2>Videos de Fondo</h2>
-            <div class="input-group">
-                <input type="file" id="background-video-upload" accept="video/*">
-                <button onclick="uploadBackgroundVideo()" class="button">Subir Video</button>
-            </div>
-            <div id="background-video-list"></div>
+      
+                          <div class="button-group">
+                              <button class="btn-action primary" 
+                                      onclick="uploadAndAssignVideo('{{ sensor.gpio_pin }}')">
+                                  Subir y Asignar
+                              </button>
+                              {% if sensor.video_path %}
+                              <button class="btn-action success" 
+                                      onclick="previewVideo('{{ sensor.video_path }}')">
+                                  Ver Preview
+                              </button>
+                              <button class="btn-action danger" 
+                                      onclick="removeVideo('{{ sensor.gpio_pin }}')">
+                                  Quitar Video
+                              </button>
+                              {% endif %}
+                          </div>
+                      </div>
+                  </div>
+              </div>
+              {% endfor %}
+          </div>
+      </div>
+        <!-- Monitor del Sistema -->
+        <div class="monitor-container" id="monitor">
+            <h2>Monitor del Sistema</h2>
+            <div id="system-monitor"></div>
         </div>
     </div>
 
-    <!-- Modal para Preview de Video -->
+    <!-- Modal de Preview -->
     <div id="videoModal" class="modal">
         <div class="modal-content">
-            <span class="close">&times;</span>
-            <video id="previewVideo" controls>
-                Tu navegador no soporta el elemento video.
+            <button class="modal-close" onclick="closePreview()">&times;</button>
+            <video id="previewVideo" controls style="width: 100%;">
+                Tu navegador no soporta el elemento de video.
             </video>
         </div>
     </div>
 
-    <div class="card container"> 
-        <div class="monitor-container"> 
-    
-            <h2>Monitor del Sistema</h2>
-            <link rel="stylesheet" href="{{ url_for('static', filename='css/monitor.css') }}"> 
-    
-            <div id="system-monitor">
-            </div>
-        </div>
+    <!-- Loading -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
     </div>
 
     <!-- Scripts -->
@@ -185,186 +178,177 @@
         const { useState, useEffect } = React;
         
         const SystemMonitor = () => {
-         const [systemInfo, setSystemInfo] = useState({
-           cpu_percent: 0,
-           mem_percent: 0,
-           cpu_temp: 0,
-           disk_percent: 0,
-           uptime: '',
-           swap_percent: 0
-         });
-        
-         useEffect(() => {
-           const ctx = document.getElementById('performanceChart');
-           const chart = new Chart(ctx, {
-             type: 'line',
-             data: {
-               labels: [],
-               datasets: [{
-                 label: 'CPU',
-                 data: [],
-                 borderColor: '#3b82f6',
-                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                 tension: 0.3,
-                 fill: true
-               }, {
-                 label: 'Memoria',
-                 data: [],
-                 borderColor: '#10b981',
-                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                 tension: 0.3,
-                 fill: true
-               }]
-             },
-             options: {
-               responsive: true,
-               maintainAspectRatio: true,
-               animation: false,
-               plugins: {
-                 legend: {
-                   position: 'top',
-                   labels: {
-                     usePointStyle: true,
-                     padding: 15,
-                     font: {
-                       family: "'Inter', sans-serif",
-                       size: 12
-                     }
-                   }
-                 }
-               },
-               scales: {
-                 y: {
-                   beginAtZero: true,
-                   max: 100,
-                   grid: {
-                     color: 'rgba(0,0,0,0.05)'
-                   },
-                   ticks: {
-                     callback: value => value + '%',
-                     font: {
-                       family: "'Inter', sans-serif",
-                       size: 11
-                     }
-                   }
-                 },
-                 x: {
-                   grid: {
-                     display: false
-                   },
-                   ticks: {
-                     font: {
-                       family: "'Inter', sans-serif",
-                       size: 11
-                     }
-                   }
-                 }
-               }
-             }
-           });
-        
-           const updateInfo = async () => {
-             try {
-               const response = await fetch('/api/system_info');
-               const data = await response.json();
-               setSystemInfo(data);
-               
-               const time = new Date().toLocaleTimeString();
-               chart.data.labels.push(time);
-               chart.data.datasets[0].data.push(data.cpu_percent);
-               chart.data.datasets[1].data.push(data.mem_percent);
-               
-               if (chart.data.labels.length > 20) {
-                 chart.data.labels.shift();
-                 chart.data.datasets.forEach(dataset => dataset.data.shift());
-               }
-               
-               chart.update('none');
-             } catch (error) {
-               console.error('Error:', error);
-             }
-           };
-        
-           updateInfo();
-           const interval = setInterval(updateInfo, 5000);
-           return () => {
-             clearInterval(interval);
-             chart.destroy();
-           };
-         }, []);
-        
-         const StatCard = ({ title, value, icon, color }) => (
-           <div className="bg-white rounded-lg p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow">
-             <div className="flex justify-between items-center">
-               <div>
-                 <h3 className="text-gray-600 text-sm font-medium">{title}</h3>
-                 <p className="text-3xl font-bold mt-2 text-gray-800">{value}</p>
-               </div>
-               <div className={`${color} rounded-full p-3 text-2xl shadow-md`}>
-                 {icon}
-               </div>
-             </div>
-           </div>
-         );
-        
-         return (
-           <div className="p-6 max-w-7xl mx-auto">
-             <h2 className="text-2xl font-bold mb-6 text-gray-800">Monitor del Sistema</h2>
-             
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-               <StatCard 
-                 title="CPU" 
-                 value={`${systemInfo.cpu_percent}%`} 
-                 icon="💻"
-                 color="bg-blue-500"
-               />
-               <StatCard 
-                 title="Memoria" 
-                 value={`${systemInfo.mem_percent}%`} 
-                 icon="📊"
-                 color="bg-green-500"
-               />
-               <StatCard 
-                 title="Temperatura" 
-                 value={`${systemInfo.cpu_temp}°C`} 
-                 icon="🌡️"
-                 color="bg-red-500"
-               />
-               <StatCard 
-                 title="Disco" 
-                 value={`${systemInfo.disk_percent}%`} 
-                 icon="💾"
-                 color="bg-purple-500"
-               />
-               <StatCard 
-                 title="Tiempo Encendido" 
-                 value={systemInfo.uptime} 
-                 icon="⏱️"
-                 color="bg-orange-500"
-               />
-               <StatCard 
-                 title="Memoria Swap" 
-                 value={`${systemInfo.swap_percent}%`} 
-                 icon="🔄"
-                 color="bg-teal-500"
-               />
-             </div>
-        
-             <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-100">
-               <h3 className="text-lg font-semibold mb-4 text-gray-800">Historial de Rendimiento</h3>
-               <div className="h-64 w-full">
-                 <canvas id="performanceChart"></canvas>
-               </div>
-             </div>
-           </div>
-         );
-        };
-        
+            const [systemInfo, setSystemInfo] = useState({
+                cpu_percent: 0,
+                mem_percent: 0,
+                cpu_temp: 0,
+                disk_percent: 0,
+                uptime: '',
+                swap_percent: 0
+            });
+            
+            useEffect(() => {
+                const ctx = document.getElementById('performanceChart');
+                const chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'CPU',
+                            data: [],
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.3,
+                            fill: true
+                        }, {
+                            label: 'Memoria',
+                            data: [],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        animation: false,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 15,
+                                    font: {
+                                        family: "'Inter', sans-serif",
+                                        size: 12
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                grid: {
+                                    color: 'rgba(0,0,0,0.05)'
+                                },
+                                ticks: {
+                                    callback: value => value + '%',
+                                    font: {
+                                        family: "'Inter', sans-serif",
+                                        size: 11
+                                    }
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                },
+                                ticks: {
+                                    font: {
+                                        family: "'Inter', sans-serif",
+                                        size: 11
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                const updateInfo = async () => {
+                    try {
+                        const response = await fetch('/api/system_info');
+                        const data = await response.json();
+                        setSystemInfo(data);
+                        
+                        const time = new Date().toLocaleTimeString();
+                        chart.data.labels.push(time);
+                        chart.data.datasets[0].data.push(data.cpu_percent);
+                        chart.data.datasets[1].data.push(data.mem_percent);
+                        
+                        if (chart.data.labels.length > 20) {
+                            chart.data.labels.shift();
+                            chart.data.datasets.forEach(dataset => dataset.data.shift());
+                        }
+                        
+                        chart.update('none');
+                    } catch (error) {
+                        console.error('Error:', error);
+                    }
+                };
+
+                updateInfo();
+                const interval = setInterval(updateInfo, 5000);
+                return () => {
+                    clearInterval(interval);
+                    chart.destroy();
+                };
+            }, []);
+
+            const StatCard = ({ title, value, icon, color }) => (
+                <div className="bg-white rounded-lg p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h3 className="text-gray-600 text-sm font-medium">{title}</h3>
+                            <p className="text-3xl font-bold mt-2 text-gray-800">{value}</p>
+                        </div>
+                        <div className={`${color} rounded-full p-3 text-2xl shadow-md`}>
+                            {icon}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            return (
+              <div className="p-6">
+            <div className="stats-grid">
+                <div className="stat-card">
+                    <div className="stat-icon">💻</div>
+                    <div className="stat-title">CPU</div>
+                    <div className="stat-value">{systemInfo.cpu_percent}%</div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon">📊</div>
+                    <div className="stat-title">Memoria</div>
+                    <div className="stat-value">{systemInfo.mem_percent}%</div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon">🌡️</div>
+                    <div className="stat-title">Temperatura</div>
+                    <div className="stat-value">{systemInfo.cpu_temp}°C</div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon">💾</div>
+                    <div className="stat-title">Disco</div>
+                    <div className="stat-value">{systemInfo.disk_percent}%</div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon">⏱️</div>
+                    <div className="stat-title">Tiempo Encendido</div>
+                    <div className="stat-value">{systemInfo.uptime}</div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon">🔄</div>
+                    <div className="stat-title">Memoria Swap</div>
+                    <div className="stat-value">{systemInfo.swap_percent}%</div>
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-lg">
+                <h3 className="text-lg font-semibold mb-4">Historial de Rendimiento</h3>
+                <div className="performance-chart">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    );
+};
         ReactDOM.render(
-         <SystemMonitor />,
-         document.getElementById('system-monitor')
+            <SystemMonitor />,
+            document.getElementById('system-monitor')
         );
-        </script>
+    </script>
 
     <script>
         // Actualizar el nombre del archivo seleccionado
@@ -378,54 +362,52 @@
 
         // Función para subir y asignar video
         async function uploadAndAssignVideo(sensorId) {
-            const fileInput = document.getElementById(`video-file-${sensorId}`);
-            if (!fileInput.files || !fileInput.files[0]) {
-                alert('Por favor, seleccione un video primero');
-                return;
-            }
+    const fileInput = document.getElementById(`video-file-${sensorId}`);
+    if (!fileInput.files || !fileInput.files[0]) {
+        alert('Por favor, seleccione un video primero');
+        return;
+    }
 
-            const formData = new FormData();
-            formData.append('video', fileInput.files[0]);
-            formData.append('sensor_id', sensorId);
+    const formData = new FormData();
+    formData.append('video', fileInput.files[0]);
+    formData.append('sensor_id', sensorId);
 
-            try {
-                const response = await fetch('/api/upload_video', {
-                    method: 'POST',
-                    body: formData
-                });
+    try {
+        const response = await fetch('/api/upload_video', {
+            method: 'POST',
+            body: formData
+        });
 
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById(`current-video-${sensorId}`).textContent = fileInput.files[0].name;
-                    location.reload(); // Recargar para mostrar los nuevos botones
-                } else {
-                    alert('Error al subir el video: ' + data.error);
-                }
-            } catch (error) {
-                alert('Error al subir el video: ' + error);
-            }
+        const data = await response.json();
+        if (data.success) {
+            document.getElementById(`current-video-${sensorId}`).textContent = fileInput.files[0].name;
+            location.reload();
+        } else {
+            alert('Error al subir el video: ' + (data.error || 'Error desconocido'));
         }
-
+    } catch (error) {
+        alert('Error al subir el video: ' + error);
+    }
+}
         // Función para quitar video
         async function removeVideo(sensorId) {
-            if (!confirm('¿Está seguro de quitar el video?')) return;
+    if (!confirm('¿Está seguro de quitar el video?')) return;
 
-            try {
-                const response = await fetch(`/api/remove_sensor_video/${sensorId}`, {
-                    method: 'POST'
-                });
+    try {
+        const response = await fetch(`/api/remove_sensor_video/${sensorId}`, {
+            method: 'POST'
+        });
 
-                const data = await response.json();
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Error al quitar el video: ' + data.error);
-                }
-            } catch (error) {
-                alert('Error al quitar el video: ' + error);
-            }
+        const data = await response.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error al quitar el video: ' + (data.error || 'Error desconocido'));
         }
-
+    } catch (error) {
+        alert('Error al quitar el video: ' + error);
+    }
+}
         // Función para previsualizar video
         function previewVideo(videoPath) {
             const modal = document.getElementById('videoModal');
@@ -435,7 +417,7 @@
         }
 
         // Cerrar modal
-        document.querySelector('.close').onclick = function() {
+        function closePreview() {
             const modal = document.getElementById('videoModal');
             const video = document.getElementById('previewVideo');
             video.pause();
@@ -445,29 +427,123 @@
 
         // Función para guardar nombre de fantasía
         async function saveSensorName(sensorId) {
-            const input = document.getElementById(`fantasy-name-${sensorId}`);
-            const newName = input.value;
+    const input = document.getElementById(`fantasy-name-${sensorId}`);
+    const newName = input.value;
+
+    try {
+        const response = await fetch('/api/actualizar-etiqueta', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gpio_pin: sensorId,
+                nombre_fantasia: newName
+            })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert('Nombre guardado correctamente');
+        } else {
+            alert('Error al guardar el nombre: ' + (data.error || 'Error desconocido'));
+        }
+    } catch (error) {
+        alert('Error al guardar el nombre: ' + error);
+    }
+}
+        // Función para actualizar modo de visualización
+        async function updateVersusMode() {
+    const modeSelect = document.getElementById('versus-mode');
+    const extraSection = document.getElementById('extra-content-section');
+    const currentMode = document.getElementById('current-mode');
+    
+    if (!modeSelect || !currentMode) return;
+    
+    const mode = modeSelect.value;
+    
+    try {
+        const response = await fetch('/api/update_versus_mode', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ mode: parseInt(mode) })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            currentMode.textContent = `Vitrina en Modo ${mode} Sensor${mode > 1 ? 'es' : ''}`;
+            
+            if (extraSection) {
+                extraSection.style.display = mode === '3' ? 'block' : 'none';
+            }
+        } else {
+            alert('Error al actualizar el modo: ' + (data.error || 'Error desconocido'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error al actualizar el modo');
+    }
+}
+        // Función para actualizar contenido extra
+        async function updateExtraContent() {
+            const fileInput = document.getElementById('extra-content');
+            const positionSelect = document.getElementById('extra-position');
+
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Por favor, seleccione un archivo primero');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('content', fileInput.files[0]);
+            formData.append('position', positionSelect.value);
 
             try {
-                const response = await fetch('/api/update_sensor_name', {
+                const response = await fetch('/api/update_extra_content', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert('Contenido extra actualizado correctamente');
+                    location.reload();
+                } else {
+                    alert('Error al actualizar el contenido extra: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error al actualizar el contenido extra: ' + error);
+            }
+        }
+
+        // Función para toggle debug panel
+        async function toggleDebugPanel() {
+            const statusSpan = document.getElementById('debug-status');
+            const stateDiv = document.getElementById('debug-state');
+            const isActive = statusSpan.textContent === 'Desactivar';
+
+            try {
+                const response = await fetch('/api/toggle_debug', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        sensor_id: sensorId,
-                        fantasy_name: newName
+                        active: !isActive
                     })
                 });
 
                 const data = await response.json();
                 if (data.success) {
-                    alert('Nombre guardado correctamente');
+                    statusSpan.textContent = isActive ? 'Activar' : 'Desactivar';
+                    stateDiv.textContent = `Estado actual: ${isActive ? 'Desactivado' : 'Activado'}`;
                 } else {
-                    alert('Error al guardar el nombre: ' + data.error);
+                    alert('Error al cambiar el estado del debug panel: ' + data.error);
                 }
             } catch (error) {
-                alert('Error al guardar el nombre: ' + error);
+                alert('Error al cambiar el estado del debug panel: ' + error);
             }
         }
 
@@ -479,6 +555,22 @@
                 window.location.href = '/login';
             });
         }
+// Actualizar el nombre del archivo seleccionado
+document.querySelectorAll('.file-input').forEach(input => {
+    input.addEventListener('change', function() {
+        const sensorId = this.dataset.sensorId;
+        const selectedFileSpan = document.getElementById(`selected-file-${sensorId}`);
+        const fileName = this.files[0] ? this.files[0].name : 'Ningún archivo seleccionado';
+        
+        if (selectedFileSpan) {
+            selectedFileSpan.textContent = fileName;
+        }
+    });
+});
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', () => {
+            updateVersusMode();
+        });
     </script>
 </body>
 </html>

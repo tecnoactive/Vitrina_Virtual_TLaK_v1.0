@@ -56,22 +56,6 @@
             object-fit: cover;
         }
         
-        /* Panel de debug */
-        #debug-panel {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 12px;
-            max-height: 300px;
-            overflow-y: auto;
-            z-index: 1000;
-        }
-        
         /* Pantalla cuadriculada */
         .quad-screen {
             display: none;
@@ -193,9 +177,6 @@
         </div>
     </div>
     
-    <!-- Panel de debug -->
-    <div id="debug-panel"></div>
-
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             if (!window.videoPreloader) {

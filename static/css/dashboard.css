@@ -1,0 +1,933 @@
+/* Estilos generales */
+.dashboard-container {
+    padding: 20px;
+    background-color: #f8f9fa;
+}
+
+/* Cards con efecto hover */
+.stat-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.stat-card h3 {
+    color: #4a5568;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #2d3748;
+}
+
+.stat-label {
+    color: #7f8c8d;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Estilos específicos para la tarjeta de producto popular */
+.popular-product {
+    background: white;
+    border-radius: 15px;
+    padding: 1.8rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    text-align: center;
+}
+
+.popular-product h3 {
+    color: #6366f1;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+    padding-bottom: 0.5rem;
+}
+
+.product-name {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #1f2937;
+    margin: 0;
+    padding-bottom: 0.8rem;
+}
+
+.product-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.product-stats .label {
+    color: #6b7280;
+    font-size: 0.95rem;
+}
+
+.product-stats .value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #1f2937;
+    line-height: 1;
+}
+
+
+/* Tablas modernas */
+.modern-table {
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.modern-table thead {
+    background-color: #f8f9fa;
+}
+
+.modern-table th {
+    font-weight: 600;
+    color: #2c3e50;
+    text-transform: uppercase;
+    font-size: 0.8em;
+    letter-spacing: 1px;
+    padding: 15px;
+    border-bottom: 2px solid #eee;
+}
+
+.modern-table td {
+    padding: 12px 15px;
+    vertical-align: middle;
+    border-bottom: 1px solid #eee;
+}
+
+.modern-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Badges y estados */
+.badge {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.8em;
+    font-weight: 500;
+}
+
+.badge-active {
+    background-color: #2ecc71;
+    color: white;
+}
+
+.badge-inactive {
+    background-color: #95a5a6;
+    color: white;
+}
+
+/* Gráficos */
+.chart-container {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.chart-title {
+    color: #2c3e50;
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-bottom: 15px;
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Tooltips personalizados */
+[data-tooltip] {
+    position: relative;
+    cursor: help;
+}
+
+[data-tooltip]:before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 10px;
+    background: #34495e;
+    color: white;
+    font-size: 0.8em;
+    border-radius: 4px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+[data-tooltip]:hover:before {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .stat-card {
+        margin-bottom: 15px;
+    }
+    
+    .modern-table {
+        font-size: 0.9em;
+    }
+}
+
+
+/* Barra de navegación */
+.nav-menu {
+    background-color: #2c3e50;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.nav-menu div {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-menu a {
+    color: white;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+.nav-menu a:hover {
+    background-color: #34495e;
+}
+
+
+
+
+:root {
+    --primary: #2563eb;
+    --secondary: #475569;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --dark: #1e293b;
+    --light: #f8fafc;
+    --border: #e2e8f0;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--light);
+    color: var(--dark);
+}
+
+
+/* Botón de resetear estadísticas */
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.3s ease;
+}
+.btn-danger1 {
+    background-color: #06751b;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.3s ease;
+}
+
+.btn-danger:hover {
+    background-color: #6c1a22;
+}
+.btn-danger1:hover {
+    background-color: #135219;
+}
+
+.logo {
+    height: 40px;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 2rem auto;
+    padding: 0 2rem;
+}
+
+.filters {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filters select, .filters input {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+}
+
+.filters button {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filters button:hover {
+    background: #1d4ed8;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-align: center;
+    transition: transform 0.2s;
+}
+
+
+.stat-value {
+    font-size: 1.875rem;
+    font-weight: 600;
+    color: var(--primary);
+    margin: 0.5rem 0;
+}
+
+.chart-container {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+}
+
+.chart-container h2 {
+    margin-top: 0;
+    color: var(--dark);
+    font-size: 1.25rem;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 300px !important;
+}
+
+.ranking-container {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+}
+
+.ranking-container h2 {
+    margin-top: 0;
+    color: var(--dark);
+    font-size: 1.25rem;
+}
+
+.ranking-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ranking-table th, .ranking-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.ranking-table th {
+    background: var(--light);
+    font-weight: 500;
+}
+
+.history-container {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.history-table th, .history-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.history-table th {
+    background: var(--light);
+    font-weight: 500;
+}
+
+#error-message {
+    display: none;
+    background: var(--danger);
+    color: white;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Estilos para el historial de asignaciones */
+.video-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.video-name {
+    font-weight: 500;
+    color: #1e293b;
+}
+
+.daily-average {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.daily-average .number {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.daily-average small {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+#assignment-history td {
+    vertical-align: middle;
+}
+
+.text-nowrap {
+    white-space: nowrap;
+}
+
+/* Estilos para las tablas de activaciones y asignaciones */
+.activations-table, .assignments-table {
+    width: 100%;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    margin-bottom: 2rem;
+}
+
+.activations-table th, .assignments-table th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 1rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.activations-table td, .assignments-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    color: #475569;
+}
+
+.activations-table tr:hover, .assignments-table tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Estilos para los badges de sensor */
+.sensor-badge {
+    background: #3b82f6;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+/* Estilos para los productos */
+.product-name {
+    font-weight: 500;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.product-icon {
+    color: #3b82f6;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Estilos para estados */
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-weight: 500;
+    font-size: 0.75rem;
+}
+
+.status-active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-inactive {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+/* Contenedores de sección */
+.section-container {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.section-title {
+    color: #1e293b;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #f1f5f9;
+}
+
+/* Animaciones mejoradas */
+.row-animation {
+    animation: slideIn 0.3s ease-out forwards;
+    opacity: 0;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Estilos para las tablas */
+.table {
+    width: 100%;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-bottom: 2rem;
+}
+
+.table thead th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 1rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.table tbody td {
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+}
+
+/* Estilos para el sensor badge */
+.sensor-badge {
+    background: #3b82f6;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+/* Estilos para la información del producto */
+.product-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.product-info i {
+    font-size: 1.25rem;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.product-name {
+    font-weight: 500;
+    color: #1e293b;
+}
+
+/* Estilos para los badges de estado */
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-weight: 500;
+    font-size: 0.75rem;
+}
+
+.status-active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-inactive {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+/* Contenedor de la tabla */
+.card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+    overflow: hidden;
+}
+
+.card-header {
+    background: #f8fafc;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.card-header h3 {
+    margin: 0;
+    color: #1e293b;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.card-body {
+    padding: 0; /* Quitamos el padding para que la tabla ocupe todo el espacio */
+}
+
+/* Estilos para las filas al pasar el mouse */
+.table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Animación de entrada para las filas */
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Estilos específicos para el historial de asignaciones */
+.history-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+    overflow: hidden;
+}
+
+.history-container h2 {
+    margin: 0;
+    padding: 1rem 1.5rem;
+    background: #f8fafc;
+    color: #1e293b;
+    font-size: 1.25rem;
+    font-weight: 600;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+#assignment-history {
+    margin: 0;
+}
+
+#assignment-history td {
+    padding: 1rem;
+}
+
+/* Estilos para el ranking */
+.ranking-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+    overflow: hidden;
+}
+
+.ranking-container h2 {
+    margin: 0;
+    padding: 1rem 1.5rem;
+    background: #f8fafc;
+    color: #1e293b;
+    font-size: 1.25rem;
+    font-weight: 600;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.ranking-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.ranking-table th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 1rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.ranking-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+}
+
+/* Badges de posición */
+.position-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.position-first {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.position-second {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.position-third {
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+.position-other {
+    background: #f8fafc;
+    color: #64748b;
+}
+
+/* Información del sensor */
+.sensor-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.sensor-name {
+    font-weight: 500;
+    color: #1e293b;
+}
+
+/* Total de activaciones */
+.total-activations {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.total-activations .number {
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 1.125rem;
+}
+
+.total-activations small {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+/* Última activación */
+.last-activation {
+    display: flex;
+    flex-direction: column;
+}
+
+.last-activation .date {
+    color: #1e293b;
+}
+
+/* Hover effect */
+.ranking-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+.btn-success {
+    background-color: #10b981;
+    color: white;
+}
+
+.btn-success:hover {
+    background-color: #059669;
+}
+
+
+/* Estilos para la tabla de activaciones recientes */
+#recent-activations {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#recent-activations thead {
+    background-color: #f8f9fa;
+}
+
+#recent-activations th {
+    padding: 1rem;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 2px solid #dee2e6;
+}
+
+#recent-activations td {
+    padding: 1rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #dee2e6;
+}
+
+#recent-activations tr:hover {
+    background-color: #f8f9fa;
+    transition: background-color 0.2s ease;
+}
+
+.sensor-info .badge {
+    font-size: 0.85rem;
+    padding: 0.5em 1em;
+}
+
+.product-name {
+    color: #2c3e50;
+    font-size: 0.95rem;
+}
+
+.timestamp {
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+.sensor-icon, .product-icon, .time-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: rgba(13, 110, 253, 0.1);
+}
+
+.product-icon {
+    background-color: rgba(108, 117, 125, 0.1);
+}
+
+.time-icon {
+    background-color: rgba(108, 117, 125, 0.1);
+}
+
+/* Animación para nuevas filas */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+#recent-activations tr {
+    animation: fadeIn 0.3s ease-out forwards;
+}

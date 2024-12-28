@@ -65,31 +65,39 @@ function showNotification(message, type = 'success') {
     }, 3000);
 }
 
-
 async function updateSensorName(sensorId, newName) {
     try {
         const response = await fetch('/api/update-sensor-name', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
             },
             body: JSON.stringify({
                 sensor_id: sensorId,
-                new_name: newName
+                name: newName
             })
         });
 
-        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-        if (response.ok) {
-            showNotification(`Nombre del sensor actualizado a: ${newName}`);
-            await loadSensorList(); // Recargar la lista de sensores
+        const data = await response.json();
+        if (data.success) {
+            // Actualizar la UI
+            const nameElement = document.querySelector(`#sensor-${sensorId} .sensor-name`);
+            if (nameElement) {
+                nameElement.textContent = newName;
+            }
+            
+            // Mostrar mensaje de éxito
+            showNotification('✅ Nombre guardado correctamente', 'success');
         } else {
             throw new Error(data.error || 'Error al actualizar el nombre');
         }
     } catch (error) {
-        showError('Error al actualizar el nombre del sensor: ' + error.message);
-        console.error(error);
+        console.error('Error:', error);
+        showNotification('❌ Error al guardar el nombre', 'error');
     }
 }
 
@@ -367,29 +375,6 @@ async function assignVideo(sensorId) {
         showError(`Error al asignar el video: ${error.message}`);
     } finally {
         hideLoading();
-    }
-}
-async function resetStats() {
-    if (!confirm('¿Estás seguro de que quieres reiniciar todas las estadísticas? Esta acción no se puede deshacer.')) {
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/reset_stats', {
-            method: 'POST'
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // Recargar los datos
-            await applyFilters();
-            alert('Estadísticas reiniciadas correctamente');
-        } else {
-            throw new Error(data.error || 'Error desconocido');
-        }
-    } catch (error) {
-        alert('Error al reiniciar estadísticas: ' + error.message);
     }
 }
 
@@ -686,13 +671,26 @@ async function updateExtraContent() {
 document.addEventListener('DOMContentLoaded', showExtraContentInfo);
 
 document.addEventListener('DOMContentLoaded', () => {
-    const closeButtons = document.querySelectorAll('.close');
-    closeButtons.forEach(button => {
-        button.addEventListener('click', closePreview);
-    });
+    // Cerrar con el botón X
+    const closeButton = document.querySelector('.close');
+    if (closeButton) {
+        closeButton.addEventListener('click', closePreview);
+    }
 
     // Cerrar con la tecla Escape
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closePreview();
+        if (e.key === 'Escape') {
+            closePreview();
+        }
     });
+
+    // Cerrar haciendo clic fuera del modal
+    const modal = document.getElementById('videoModal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closePreview();
+            }
+        });
+    }
 });

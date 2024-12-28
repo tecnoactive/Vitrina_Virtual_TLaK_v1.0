@@ -1,7 +1,7 @@
 // Variables globales y de estado (coloca esto al inicio del archivo)
 const SENSOR_PINS = [17, 27, 5, 6, 13, 18, 22, 26, 19];
-const SENSOR_CHECK_INTERVAL = 300;
-const DEBOUNCE_DELAY = 500;
+const SENSOR_CHECK_INTERVAL = 100; // Reducido de 250 a 100ms
+const DEBOUNCE_DELAY = 200; // Reducido de 500 a 200ms
 
 // Variables de conexión
 let isConnected = false;
@@ -24,59 +24,54 @@ let assignedSensors = new Set();
 
 // Variables de activación y timers
 let activationTimers = new Map();
+let sensorActivationOrder = [];
+let previousActiveSensors = new Set(); 
+let lastTriggerTime = {}; // Objeto para almacenar el último tiempo de activación de cada sensor
+
 
 // Debug
-const DEBUG = localStorage.getItem('debugEnabled') === 'true';
-const debugPanel = document.getElementById('debug-panel');
+localStorage.setItem('debugEnabled', 'false');
 
 function debugLog(message) {
-    const time = new Date().toLocaleTimeString(); // Mover declaración aquí
-    
     if (localStorage.getItem('debugEnabled') === 'true') {
-        const panel = document.getElementById('debug-panel');
-        if (panel) {
-            panel.style.display = 'block';
-            panel.style.width = '300px';
-            panel.style.maxHeight = '300px';
-            panel.style.backgroundColor = 'rgba(0,0,0,0.8)';
-            panel.style.color = '#fff';
-            panel.style.fontSize = '12px';
-            panel.style.padding = '10px';
-            panel.style.fontFamily = 'monospace';
-            
-            panel.innerHTML = `${time}: ${message}<br>${panel.innerHTML}`
-                .split('<br>').slice(0, 50).join('<br>');
-            console.log(`[DEBUG] ${time}: ${message}`);
-        }
-    } else if (debugPanel) {
-        debugPanel.style.display = 'none';
+        console.log(`[DEBUG] ${new Date().toLocaleTimeString()}: ${message}`);
     }
 }
 
 function logError(error, context) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error in ${context}:`, error);
-    debugLog(`Error en ${context}: ${errorMessage}`);
 }
 
-
-// Inicialización del debug panel
+// Reemplazar initDebugPanel con una función vacía ya que no la necesitamos
 function initDebugPanel() {
-    if (debugPanel) {
-        debugPanel.style.display = DEBUG ? 'block' : 'none';
-    }
+    // No hacer nada
 }
 
 // Wrapper para fetch con logging
+
 async function fetchWithLogging(url, options = {}) {
     try {
         debugLog(`Realizando fetch a: ${url}`);
         const response = await fetch(url, options);
+        const contentType = response.headers.get("content-type");
+        
         if (!response.ok) {
+            debugLog(`Error HTTP: ${response.status} ${response.statusText}`);
+            const text = await response.text();
+            debugLog(`Respuesta de error: ${text.substring(0, 200)}...`);
             throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
+        if (!contentType || !contentType.includes("application/json")) {
+            debugLog(`Tipo de contenido inesperado: ${contentType}`);
+            const text = await response.text();
+            debugLog(`Respuesta no-JSON: ${text.substring(0, 200)}...`);
+            throw new Error(`Respuesta no es JSON: ${contentType}`);
+        }
+        
         const data = await response.json();
-        debugLog(`Respuesta recibida de ${url}`);
+        debugLog(`Respuesta recibida de ${url}: ${JSON.stringify(data).substring(0, 200)}...`);
         return data;
     } catch (error) {
         logError(error, `fetch a ${url}`);
@@ -84,32 +79,30 @@ async function fetchWithLogging(url, options = {}) {
     }
 }
 
-// Clase BackgroundPlaylist mejorada
+
 class BackgroundPlaylist {
     constructor() {
         this.playlist = [];
         this.currentIndex = 0;
         this.video = null;
-        this.isPlaying = false;
-        this.isLoading = false;
+        this.isTransitioning = false;
     }
 
     init(video) {
         this.video = video;
         this.video.removeAttribute('loop');
-        this.video.preload = "auto";
+        this.video.muted = true;
+        this.video.playsInline = true;
         
         this.video.addEventListener('ended', () => {
-            if (!this.isLoading) this.playNext();
-        });
-        
-        this.video.addEventListener('error', (e) => {
-            console.error('Error playing video:', e);
-            if (!this.isLoading) this.playNext();
+            if (!this.isTransitioning) {
+                this.playNext();
+            }
         });
 
-        this.video.addEventListener('canplay', () => {
-            this.isLoading = false;
+        this.video.addEventListener('error', (e) => {
+            debugLog(`Error en video de fondo: ${e.message}`);
+            this.playNext();
         });
 
         this.load();
@@ -117,152 +110,250 @@ class BackgroundPlaylist {
 
     async load() {
         try {
-            const response = await fetch('/api/background_videos');
+            const response = await fetch('/api/public/background_videos');
             if (!response.ok) throw new Error('Error loading playlist');
             
             const videos = await response.json();
-            if (!Array.isArray(videos) || videos.length === 0) {
-                throw new Error('No videos in playlist');
-            }
-            
-            this.playlist = videos.sort((a, b) => a.orden - b.orden);
-            if (this.playlist.length > 0) {
+            if (Array.isArray(videos) && videos.length > 0) {
+                this.playlist = videos.sort((a, b) => a.orden - b.orden);
                 await this.play();
             }
         } catch (error) {
-            console.error('Error loading playlist:', error);
+            debugLog(`Error cargando playlist: ${error.message}`);
         }
     }
 
     async play() {
-        if (!this.playlist.length || !this.video || this.isLoading) return;
+        if (!this.playlist.length || !this.video || this.isTransitioning) return;
         
         try {
-            this.isLoading = true;
+            this.isTransitioning = true;
             const currentVideo = this.playlist[this.currentIndex];
             
-            if (this.video.src === `/static/${currentVideo.video_path}`) {
-                this.isLoading = false;
-                return;
-            }
+            // Precargar el video antes de reproducirlo
+            const videoPath = `/static/${currentVideo.video_path}`;
+            await new Promise((resolve, reject) => {
+                this.video.src = videoPath;
+                this.video.load();
+                
+                const onCanPlay = () => {
+                    this.video.removeEventListener('canplay', onCanPlay);
+                    resolve();
+                };
+                
+                this.video.addEventListener('canplay', onCanPlay);
+                
+                // Timeout por si el video tarda demasiado en cargar
+                setTimeout(resolve, 3000);
+            });
 
-            this.video.style.objectFit = 'contain';
-            this.video.playsInline = true;
-            this.video.muted = true;
-            this.video.src = `/static/${currentVideo.video_path}`;
-            this.video.load();
-            
-            const playPromise = this.video.play();
-            if (playPromise !== undefined) {
-                await playPromise;
-                this.isPlaying = true;
-            }
+            this.video.style.display = 'block';
+            await this.video.play();
+            debugLog(`Reproduciendo video de fondo: ${currentVideo.video_path}`);
         } catch (error) {
-            console.error('Error playing video:', error);
-            this.isLoading = false;
+            debugLog(`Error reproduciendo video de fondo: ${error.message}`);
             setTimeout(() => this.playNext(), 1000);
+        } finally {
+            this.isTransitioning = false;
         }
     }
 
-    playNext() {
-        if (this.isLoading) return;
+    async playNext() {
+        if (this.isTransitioning) return;
+        
         this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
-        this.play();
+        await this.play();
     }
 }
 
 // Funciones de monitoreo de sensores
-async function loadAssignedSensors() {
-    try {
-        const response = await fetch('/api/sensor_videos');
-        const videos = await response.json();
-        assignedSensors = new Set(videos.map(v => v.sensor_id));
-        debugLog(`Sensores con videos asignados: ${Array.from(assignedSensors).join(', ')}`);
-    } catch (error) {
-        debugLog(`Error cargando sensores asignados: ${error.message}`);
-    }
-}
-
-async function checkSensors() {
-    if (isTransitioning) return;
-
-    try {
-        const response = await fetch('/api/sensor_status');
-        const data = await response.json();
-        const activeSensors = data.active_sensors || [];
-        
-        // Filtrar solo sensores que tienen videos asignados
-        const relevantSensors = activeSensors.filter(sensor => assignedSensors.has(sensor));
-
-        // Si hay un cambio, actualizar inmediatamente
-        if (JSON.stringify(relevantSensors) !== JSON.stringify(lastActiveSensors)) {
-            // Solo usar debounce si hay múltiples sensores activos
-            if (relevantSensors.length > 1) {
-                if (debounceTimer) clearTimeout(debounceTimer);
-                
-                debounceTimer = setTimeout(async () => {
-                    await handleSensorChange(relevantSensors);
-                    lastActiveSensors = relevantSensors;
-                }, DEBOUNCE_DELAY);
-            } else {
-                // Para un solo sensor, actualizar inmediatamente
-                await handleSensorChange(relevantSensors);
-                lastActiveSensors = relevantSensors;
-            }
-        }
-    } catch (error) {
-        debugLog(`Error en checkSensors: ${error.message}`);
-    }
-}
-
 
 async function handleSensorChange(activeSensors) {
     if (isTransitioning) return;
     isTransitioning = true;
 
     try {
-        const config = await fetch('/api/system-config').then(r => r.json());
-        const versusMode = parseInt(config.versus_mode) || 1;
-        debugLog(`Modo actual: ${versusMode}, Sensores activos: ${activeSensors.length}`);
-
-        // Si no hay sensores activos, mostrar video de fondo
+        // Si no hay sensores activos, cambiar a modo fondo inmediatamente
         if (activeSensors.length === 0) {
             debugLog('No hay sensores activos, cambiando a modo fondo');
+            lastTriggerTime = {}; // Resetear tiempos
             await switchToBackgroundMode();
             return;
         }
 
-        // Manejar los diferentes modos
+        // Actualizar tiempos de activación para nuevos sensores
+        const currentTime = Date.now();
+        activeSensors.forEach(sensor => {
+            if (!lastTriggerTime[sensor]) {
+                lastTriggerTime[sensor] = currentTime;
+                debugLog(`Nuevo sensor activado: ${sensor} en tiempo ${currentTime}`);
+            }
+        });
+
+        // Limpiar tiempos de sensores inactivos
+        Object.keys(lastTriggerTime).forEach(sensor => {
+            if (!activeSensors.includes(parseInt(sensor))) {
+                delete lastTriggerTime[sensor];
+            }
+        });
+
+        // Ordenar sensores por tiempo de activación (más reciente primero)
+        const orderedSensors = activeSensors
+            .sort((a, b) => lastTriggerTime[b] - lastTriggerTime[a]);
+
+        // Obtener configuración del sistema en paralelo con otras operaciones
+        const configPromise = fetch('/api/system-config').then(r => r.json());
+        
         try {
+            const config = await configPromise;
+            const versusMode = parseInt(config.versus_mode) || 1;
+
             switch (versusMode) {
                 case 1: // Modo único
-                    const lastSensor = activeSensors[activeSensors.length - 1];
-                    debugLog(`Cambiando a modo único con sensor: ${lastSensor}`);
-                    await switchToSingleMode(lastSensor);
-                    break;
-                case 2: // Modo versus
-                    if (activeSensors.length >= 2) {
-                        const lastTwo = activeSensors.slice(-2);
-                        debugLog(`Cambiando a modo versus con sensores: ${lastTwo.join(', ')}`);
-                        await switchToVersusMode(lastTwo[0], lastTwo[1]);
+                    const mostRecentSensor = orderedSensors[0];
+                    if (currentSensorId !== mostRecentSensor) {
+                        debugLog(`Cambiando a sensor más reciente: ${mostRecentSensor}`);
+                        await switchToSingleMode(mostRecentSensor);
                     } else {
-                        debugLog(`Cambiando a modo único (en versus) con sensor: ${activeSensors[0]}`);
-                        await switchToSingleMode(activeSensors[0]);
+                        debugLog(`Manteniendo sensor actual: ${currentSensorId}`);
+                        isTransitioning = false;
                     }
                     break;
-                default:
-                    debugLog(`Modo no soportado: ${versusMode}, cambiando a modo fondo`);
-                    await switchToBackgroundMode();
+
+                case 2: // Modo versus
+                    if (orderedSensors.length >= 2) {
+                        const [first, second] = orderedSensors;
+                        debugLog(`Modo versus con sensores: ${first}, ${second}`);
+                        await switchToVersusMode(first, second);
+                    } else {
+                        debugLog(`Modo único en versus con sensor: ${orderedSensors[0]}`);
+                        await switchToSingleMode(orderedSensors[0]);
+                    }
+                    break;
             }
         } catch (error) {
             debugLog(`Error cambiando modo: ${error.message}`);
             await switchToBackgroundMode();
         }
+
     } catch (error) {
         debugLog(`Error en handleSensorChange: ${error.message}`);
         await switchToBackgroundMode();
     } finally {
         isTransitioning = false;
+    }
+}
+
+async function loadAssignedSensors() {
+    try {
+        debugLog('Intentando cargar sensores asignados...');
+        const response = await fetch('/api/public/sensor_videos');
+        
+        if (!response.ok) {
+            const text = await response.text();
+            debugLog(`Error en respuesta: ${text.substring(0, 200)}...`);
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+
+        const videos = await response.json();
+        debugLog(`Videos recibidos: ${JSON.stringify(videos)}`);
+        
+        assignedSensors = new Set(videos.map(v => v.sensor_id));
+        debugLog(`Sensores con videos asignados: ${Array.from(assignedSensors).join(', ')}`);
+        
+        if (assignedSensors.size === 0) {
+            debugLog('ADVERTENCIA: No hay sensores con videos asignados');
+        }
+    } catch (error) {
+        debugLog(`Error cargando sensores asignados: ${error.message}`);
+        assignedSensors = new Set();
+        debugLog('Inicializando con conjunto vacío de sensores');
+    }
+}
+
+async function checkSensors() {
+    if (isTransitioning) {
+        debugLog('Saltando checkSensors porque hay una transición en curso');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/public/sensor_status');
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(`Error en sensor_status: ${response.status}`);
+        }
+
+        const activeSensors = data.active_sensors || [];
+        debugLog(`Estado actual de sensores: ${JSON.stringify(data.status)}`);
+        debugLog(`Sensores activos: ${activeSensors.join(', ')}`);
+        
+        // Filtrar solo sensores que tienen videos asignados
+        const relevantSensors = activeSensors.filter(sensor => assignedSensors.has(sensor));
+        debugLog(`Sensores relevantes: ${relevantSensors.join(', ')}`);
+
+        if (relevantSensors.length > 0) {
+            debugLog(`Detectados sensores relevantes: ${relevantSensors.join(', ')}`);
+            await handleSensorChange(relevantSensors);
+            lastActiveSensors = relevantSensors;
+        } else if (lastActiveSensors.length > 0) {
+            debugLog('No hay sensores relevantes activos, volviendo a modo background');
+            await switchToBackgroundMode();
+            lastActiveSensors = [];
+        }
+    } catch (error) {
+        debugLog(`Error en checkSensors: ${error.message}`);
+    }
+}
+
+async function switchToSingleMode(sensorId) {
+    debugLog(`Modo único - Iniciando cambio a sensor ${sensorId}`);
+    
+    try {
+        // Obtener datos del video y preparar el elemento de video en paralelo
+        const [videoData] = await Promise.all([
+            fetch(`/api/public/sensor_video/${sensorId}`).then(r => r.json()),
+            new Promise(resolve => {
+                if (backgroundPlayer && backgroundPlayer.video) {
+                    backgroundPlayer.video.style.display = 'none';
+                }
+                resolve();
+            })
+        ]);
+        
+        if (!videoData.video_path) {
+            throw new Error('Video no encontrado');
+        }
+
+        const mainVideo = document.getElementById('background-video');
+        if (!mainVideo) {
+            throw new Error('Elemento background-video no encontrado');
+        }
+
+        // Configuración básica
+        mainVideo.src = `/static/${videoData.video_path}`;
+        mainVideo.style.display = 'block';
+        mainVideo.muted = true;
+        mainVideo.loop = true;
+        mainVideo.playsInline = true;
+
+        // Reproducir inmediatamente
+        const playPromise = mainVideo.play();
+        
+        // Actualizar estado inmediatamente
+        currentMode = 'single';
+        currentSensorId = sensorId;
+        
+        // Configurar tracking en paralelo con la reproducción
+        setupVideoTracking(mainVideo, sensorId);
+        
+        // Esperar a que termine de cargar el video
+        await playPromise;
+
+    } catch (error) {
+        debugLog(`Error en switchToSingleMode: ${error.message}`);
+        await switchToBackgroundMode();
     }
 }
 
@@ -272,84 +363,101 @@ async function switchToBackgroundMode() {
     const splitScreen = document.querySelector('.split-screen');
     const quadScreen = document.querySelector('.quad-screen');
     
-    // Detener otros videos
-    stopAllVideos();
-    
-    // Mostrar y reproducir video de fondo
-    if (backgroundPlayer && backgroundPlayer.video) {
-        backgroundPlayer.video.style.display = 'block';
-        await backgroundPlayer.play();
-    }
-    
-    // Ocultar otros contenedores
     if (splitScreen) splitScreen.style.display = 'none';
     if (quadScreen) quadScreen.style.display = 'none';
     
-    currentMode = 'background';
-}
-
-async function switchToSingleMode(sensorId) {
-    if (currentMode === 'single' && currentSensorId === sensorId) return;
-
-    debugLog(`Modo único - Sensor ${sensorId}`);
-    try {
-        const [videoResponse] = await Promise.all([
-            fetch(`/api/sensor_video/${sensorId}`),
-            handleSensorActivation(sensorId) // Registrar activación en paralelo
-        ]);
-        
-        const videoData = await videoResponse.json();
-        
-        if (!videoData.video_path) {
-            throw new Error('Video no encontrado');
-        }
-
+    // Solo cambiar al video de fondo si no estamos ya en modo fondo
+    if (currentMode !== 'background') {
         stopAllVideos();
-        hideAllContainers();
-
-        const mainVideo = document.getElementById('background-video');
-        mainVideo.style.display = 'block';
-        mainVideo.src = `/static/${videoData.video_path}`;
-        mainVideo.muted = localStorage.getItem(`sensor_${sensorId}_muted`) === 'true';
-        mainVideo.loop = true;
         
-        await tryPlayVideo(mainVideo);
-        currentMode = 'single';
-        currentSensorId = sensorId;
+        if (backgroundPlayer && backgroundPlayer.video) {
+            // Asegurarse de que el video esté listo antes de mostrarlo
+            try {
+                backgroundPlayer.video.style.opacity = '0';
+                backgroundPlayer.video.style.display = 'block';
+                backgroundPlayer.video.style.transition = 'opacity 0.5s ease-in-out';
+                
+                // Esperar a que el video esté listo
+                await new Promise((resolve) => {
+                    const onCanPlay = () => {
+                        backgroundPlayer.video.removeEventListener('canplay', onCanPlay);
+                        resolve();
+                    };
+                    
+                    if (backgroundPlayer.video.readyState >= 3) {
+                        resolve();
+                    } else {
+                        backgroundPlayer.video.addEventListener('canplay', onCanPlay);
+                    }
+                });
+
+                await backgroundPlayer.play();
+                backgroundPlayer.video.style.opacity = '1';
+                currentMode = 'background';
+                currentSensorId = null;
+                
+            } catch (error) {
+                debugLog(`Error cambiando a modo fondo: ${error.message}`);
+            }
+        }
+    }
+}
+
+async function setupVideoTracking(video, sensorId) {
+    if (!video) return;
+
+    let startTime = null;
+    let videoDuration = null;
+
+    video.addEventListener('play', () => {
+        startTime = Date.now();
+        videoDuration = video.duration * 1000; // Convertir a milisegundos
+        debugLog(`Video iniciado para sensor ${sensorId}. Duración: ${videoDuration}ms`);
+    });
+
+    video.addEventListener('ended', async () => {
+        if (startTime) {
+            const duration = Date.now() - startTime;
+            await registerActivation(sensorId, duration, true);
+            debugLog(`Video completado para sensor ${sensorId}. Duración: ${duration}ms`);
+        }
+    });
+
+    video.addEventListener('pause', async () => {
+        if (startTime) {
+            const duration = Date.now() - startTime;
+            if (duration >= 5000) { // 5 segundos mínimo
+                await registerActivation(sensorId, duration, false);
+                debugLog(`Video pausado para sensor ${sensorId}. Duración: ${duration}ms`);
+            }
+            startTime = null;
+        }
+    });
+}
+
+async function registerActivation(sensorId, duration, completed) {
+    try {
+        const response = await fetch('/api/register_activation', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                sensor_id: sensorId,
+                duration: duration,
+                completed: completed
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Error registering activation');
+        }
     } catch (error) {
-        debugLog(`Error en modo único: ${error.message}`);
-        await switchToBackgroundMode();
+        debugLog(`Error registrando activación: ${error.message}`);
     }
 }
 
 
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        initDebugPanel();
-        debugLog('Iniciando aplicación...');
-
-        await loadAssignedSensors();
-        
-        backgroundPlayer = new BackgroundPlaylist();
-        await checkServerConnection();
-        
-        const config = await fetchWithLogging('/api/system-config');
-        const currentMode = parseInt(config.versus_mode || '1');
-        
-        setupVideoEventListeners();
-        
-        // Iniciar monitoreo de sensores sin esperar
-        initSensorMonitoring().catch(error => {
-            debugLog(`Error en monitoreo inicial: ${error.message}`);
-        });
-        
-        await handleAutoplay();
-        debugLog(`Sistema iniciado en modo: ${currentMode}`);
-    } catch (error) {
-        logError(error, 'inicialización');
-        showConnectionError();
-    }
-});
 
 
 // Se mantienen el resto de las funciones auxiliares igual...
@@ -361,11 +469,18 @@ function hideAllContainers() {
 }
 
 function startSensorMonitoring() {
-    debugLog('Configurando intervalo de monitoreo');
+    debugLog('Iniciando monitoreo de sensores');
     if (window.sensorInterval) {
         clearInterval(window.sensorInterval);
+        debugLog('Intervalo anterior limpiado');
     }
+    
+    // Primer chequeo inmediato
+    checkSensors();
+    
+    // Configurar intervalo
     window.sensorInterval = setInterval(checkSensors, SENSOR_CHECK_INTERVAL);
+    debugLog(`Monitoreo configurado cada ${SENSOR_CHECK_INTERVAL}ms`);
 }
 
 // Funciones auxiliares de video
@@ -373,14 +488,13 @@ function stopAllVideos() {
     document.querySelectorAll('video').forEach(video => {
         try {
             video.pause();
-            video.currentTime = 0;
-            video.src = '';
             video.style.display = 'none';
         } catch (e) {
-            debugLog(`Error deteniendo video: ${e.message}`);
+            debugLog(`Error deteniendo video ${video.id}: ${e.message}`);
         }
     });
 }
+
 
 async function tryPlayVideo(video) {
     if (!video || !video.src) return;
@@ -555,18 +669,18 @@ async function switchToVersusMode(sensor1, sensor2) {
         await switchToBackgroundMode();
     }
 }
-
 async function getVideoForSensor(sensorId) {
-    const response = await fetch(`/api/sensor_video/${sensorId}`);
+    const response = await fetch(`/api/public/sensor_video/${sensorId}`);
     if (!response.ok) throw new Error(`Error obteniendo video para sensor ${sensorId}`);
     return response.json();
 }
+
 
 async function initSensorMonitoring() {
     debugLog('Iniciando monitoreo de sensores...');
     try {
         // Verificar estado inicial de sensores
-        const response = await fetch('/api/sensor_status');
+        const response = await fetch('/api/public/sensor_status');
         const data = await response.json();
         
         if (!response.ok) {
@@ -699,29 +813,23 @@ async function loadExtraContent() {
 // Inicialización principal
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        // Inicializar debug panel
         initDebugPanel();
         debugLog('Iniciando aplicación...');
 
-        // Cargar sensores con videos asignados
+        // Cargar sensores
         await loadAssignedSensors();
         
         // Inicializar reproductor de fondo
-        backgroundPlayer = new BackgroundPlaylist();
+        const mainVideo = document.getElementById('background-video');
+        if (mainVideo) {
+            backgroundPlayer = new BackgroundPlaylist();
+            backgroundPlayer.init(mainVideo);
+        }
         
-        // Verificar conexión con el servidor
-        await checkServerConnection();
-        
-        // Cargar configuración
-        const config = await fetchWithLogging('/api/system-config');
-        const currentMode = parseInt(config.versus_mode || '1');
-        
-        // Configurar videos y monitoreo
-        setupVideoEventListeners();
+        // Iniciar monitoreo
         await initSensorMonitoring();
-        await handleAutoplay();
-
-        debugLog(`Sistema iniciado en modo: ${currentMode}`);
+        
+        debugLog('Sistema iniciado completamente');
     } catch (error) {
         logError(error, 'inicialización');
         showConnectionError();

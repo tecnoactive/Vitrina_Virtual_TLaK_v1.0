@@ -8,203 +8,9 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-    <link rel="stylesheet" href="/static/css/panel.css">
-    <style>
-        :root {
-            --primary: #2563eb;
-            --secondary: #475569;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --dark: #1e293b;
-            --light: #f8fafc;
-            --border: #e2e8f0;
-        }
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: system-ui, -apple-system, sans-serif;
-            background: var(--light);
-            color: var(--dark);
-        }
-
-        .nav-menu {
-            background: white;
-            padding: 1rem 2rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .logo {
-            height: 40px;
-        }
-
-        .nav-menu a {
-            color: var(--dark);
-            text-decoration: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            transition: all 0.2s;
-        }
-
-        .nav-menu a:hover {
-            background: var(--light);
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 2rem auto;
-            padding: 0 2rem;
-        }
-
-        .filters {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .filters select, .filters input {
-            padding: 0.5rem;
-            border: 1px solid var(--border);
-            border-radius: 0.375rem;
-            font-size: 0.875rem;
-        }
-
-        .filters button {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .filters button:hover {
-            background: #1d4ed8;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .stat-card h3 {
-            margin: 0;
-            color: var(--secondary);
-            font-size: 0.875rem;
-            font-weight: 500;
-        }
-
-        .stat-value {
-            font-size: 1.875rem;
-            font-weight: 600;
-            color: var(--primary);
-            margin: 0.5rem 0;
-        }
-
-        .chart-container {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-        }
-
-        .chart-container h2 {
-            margin-top: 0;
-            color: var(--dark);
-            font-size: 1.25rem;
-        }
-
-        .chart-container canvas {
-            width: 100% !important;
-            height: 300px !important;
-        }
-
-        .ranking-container {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-        }
-
-        .ranking-container h2 {
-            margin-top: 0;
-            color: var(--dark);
-            font-size: 1.25rem;
-        }
-
-        .ranking-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .ranking-table th, .ranking-table td {
-            padding: 0.75rem;
-            text-align: left;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .ranking-table th {
-            background: var(--light);
-            font-weight: 500;
-        }
-
-        .history-container {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .history-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .history-table th, .history-table td {
-            padding: 0.75rem;
-            text-align: left;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .history-table th {
-            background: var(--light);
-            font-weight: 500;
-        }
-
-        #error-message {
-            display: none;
-            background: var(--danger);
-            color: white;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-        }
-    </style>
 </head>
 <body>
     <nav class="nav-menu">
@@ -212,7 +18,13 @@
             <img src="/static/images/logo_.png" alt="Logo" class="logo">
             <a href="/panel">Panel de Control</a>
         </div>
-        <div>
+        <div> <button onclick="downloadStats()" class="btn btn-danger1">
+            <i class="fas fa-download me-2"></i>
+            Descargar Estadísticas
+        </button>      <button onclick="resetStats()" class="btn btn-danger">
+            <i class="fas fa-trash-alt me-2"></i>
+            Resetear Estadísticas
+        </button>
             <a href="#" onclick="handleLogout()">Cerrar Sesión</a>
         </div>
     </nav>
@@ -252,67 +64,21 @@
                 <h3>Activaciones este Mes</h3>
                 <div id="month-activations" class="stat-value">0</div>
             </div>
-        </div>
-
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Total Activaciones</h5>
-                        <p class="card-text" id="total-activations">0</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Activaciones Hoy</h5>
-                        <p class="card-text" id="today-activations">0</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Activaciones Semana</h5>
-                        <p class="card-text" id="week-activations">0</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Activaciones Mes</h5>
-                        <p class="card-text" id="month-activations">0</p>
-                    </div>
+            <div class="stat-card popular-product">
+                <h3>Producto Más Popular</h3>
+                <div class="product-name" id="popular-product-name">-</div>
+                <div class="product-stats">
+                    <span class="label">Total Activaciones:</span>
+                    <span id="popular-product-activations" class="value">0</span>
                 </div>
             </div>
         </div>
 
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Producto Más Popular</h5>
-                        <div class="d-flex align-items-center">
-                            <div class="flex-grow-1">
-                                <h6 class="mb-1" id="popular-product-name">-</h6>
-                                <p class="mb-0">
-                                    <span class="text-muted">Total Activaciones:</span>
-                                    <span id="popular-product-activations">0</span>
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+        
         <div class="chart-container">
             <h2>Activaciones por Día</h2>
             <canvas id="activationsChart"></canvas>
         </div>
-
         <div class="chart-container">
             <h2>Activaciones por Sensor</h2>
             <canvas id="sensorChart"></canvas>
@@ -333,10 +99,29 @@
                 </tbody>
             </table>
         </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>Activaciones Recientes (Última Hora)</h3>
+            </div>
+            <div class="card-body">
+                <table class="table" id="recent-activations">
+                    <thead>
+                        <tr>
+                            <th>Sensor</th>
+                            <th>Producto</th>
+                            <th>Hora</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Aquí se insertarán las filas dinámicamente -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
         <div class="history-container">
             <h2>Historial de Asignaciones</h2>
-            <table class="history-table">
+            <table class="table" id="assignment-history">
                 <thead>
                     <tr>
                         <th>Sensor</th>
@@ -347,7 +132,8 @@
                         <th>Promedio Diario</th>
                     </tr>
                 </thead>
-                <tbody id="history-table-body">
+                <tbody>
+                    <!-- Aquí se insertarán las filas dinámicamente -->
                 </tbody>
             </table>
         </div>

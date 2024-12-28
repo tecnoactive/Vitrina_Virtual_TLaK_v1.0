@@ -63,8 +63,7 @@ class VideoPreloader {
     }
  
     updateProgress() {
-        this.loadedVideos++;
-        const progress = (this.loadedVideos / this.totalVideos) * 100;
+        const progress = Math.min((this.loadedVideos / this.totalVideos) * 100, 100);
         const progressBar = document.querySelector('.loading-bar-progress');
         const loadingText = document.getElementById('loading-text');
         
