@@ -1,3 +1,9 @@
 *.mp4
-/home/pi/vitrina/static/videos
+static/videos/*
+myenv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
 
