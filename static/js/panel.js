@@ -4,12 +4,33 @@ let currentUploads = new Set();
 let previewInterval = null;
 let notificationTimeout;
 
-
 // Inicialización
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        // Primero verificar si los elementos necesarios existen
+        const backgroundList = document.getElementById('background-video-list');
+        if (!backgroundList) {
+            console.warn('Container for background videos not found');
+            return;
+        }
+
+        // Cargar videos de fondo de manera segura
+        try {
+            const response = await fetch('/api/background_videos');
+            const videos = await response.json();
+
+            backgroundList.innerHTML = '';
+            videos.forEach((video, index) => {
+                const item = createPlaylistItem(video, index === 0, index === videos.length - 1);
+                backgroundList.appendChild(item);
+            });
+        } catch (error) {
+            console.error('Error loading background videos:', error);
+            backgroundList.innerHTML = '<div class="error-message">Error cargando playlist</div>';
+        }
+
+        // Cargar el resto de la configuración
         await loadSensorList();
-        await loadBackgroundVideos();
         await loadCurrentMode();
         
         const debugEnabled = localStorage.getItem('debugEnabled') === 'true';
@@ -22,7 +43,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         showExtraContentInfo();
     } catch (error) {
         console.error('Error en inicialización:', error);
-        showError('Error inicializando el panel');
     }
 });
 
@@ -100,27 +120,27 @@ async function updateSensorName(sensorId, newName) {
         showNotification('❌ Error al guardar el nombre', 'error');
     }
 }
-
 async function removeBackgroundVideo(videoId) {
     if (!confirm('¿Estás seguro de eliminar este video?')) return;
 
-    showLoading('Eliminando video...');
     try {
+        const button = event.target;
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Eliminando...';
+
         const response = await fetch(`/api/remove_background/${videoId}`, {
             method: 'DELETE'
         });
 
         if (response.ok) {
-            showSuccess('Video eliminado correctamente');
             await loadBackgroundVideos();
         } else {
             throw new Error('Error al eliminar');
         }
     } catch (error) {
         console.error('Error:', error);
-        showError('Error al eliminar el video');
-    } finally {
-        hideLoading();
+        alert('Error al eliminar el video');
     }
 }
 
@@ -404,10 +424,15 @@ async function removeVideo(sensorId) {
 // Gestión de playlist de fondo
 async function loadBackgroundVideos() {
     const container = document.getElementById('background-video-list');
-    if (!container) return;
+    if (!container) {
+        console.warn('Container for background videos not found');
+        return;
+    }
 
-    showLoading('Cargando playlist...');
     try {
+        // Mostrar estado de carga en el contenedor
+        container.innerHTML = '<div class="loading-message">Cargando playlist...</div>';
+        
         const response = await fetch('/api/background_videos');
         const videos = await response.json();
 
@@ -418,9 +443,7 @@ async function loadBackgroundVideos() {
         });
     } catch (error) {
         console.error('Error:', error);
-        showError('Error cargando playlist');
-    } finally {
-        hideLoading();
+        container.innerHTML = '<div class="error-message">Error cargando playlist</div>';
     }
 }
 
@@ -431,9 +454,9 @@ function createPlaylistItem(video, isFirst, isLast) {
     div.innerHTML = `
         <div class="playlist-info">
             <h4>${fileName}</h4>
-            <p>Orden: ${video.orden}</p>
+            <p class="order-info">Orden: ${video.orden}</p>
             <div class="audio-control">
-                <label>
+                <label class="mute-label">
                     <input type="checkbox" 
                            onchange="toggleMuteBackground(${video.id}, this.checked)"
                            ${localStorage.getItem(`background_${video.id}_muted`) === 'true' ? 'checked' : ''}>
@@ -442,10 +465,22 @@ function createPlaylistItem(video, isFirst, isLast) {
             </div>
         </div>
         <div class="playlist-controls">
-            <button class="button" onclick="showPreview('/static/${video.video_path}')">Preview</button>
-            ${!isFirst ? `<button class="button" onclick="moveVideo(${video.id}, 'up')">↑</button>` : ''}
-            ${!isLast ? `<button class="button" onclick="moveVideo(${video.id}, 'down')">↓</button>` : ''}
-            <button class="button delete" onclick="removeBackgroundVideo(${video.id})">Eliminar</button>
+            <button class="btn-action primary" onclick="showPreview('/static/${video.video_path}')">
+                <i class="fas fa-play"></i> Preview
+            </button>
+            ${!isFirst ? `
+                <button class="btn-action secondary" onclick="moveVideo(${video.id}, 'up')">
+                    <i class="fas fa-arrow-up"></i>
+                </button>
+            ` : ''}
+            ${!isLast ? `
+                <button class="btn-action secondary" onclick="moveVideo(${video.id}, 'down')">
+                    <i class="fas fa-arrow-down"></i>
+                </button>
+            ` : ''}
+            <button class="btn-action danger" onclick="removeBackgroundVideo(${video.id})">
+                <i class="fas fa-trash"></i> Eliminar
+            </button>
         </div>
     `;
     return div;
@@ -454,14 +489,20 @@ function createPlaylistItem(video, isFirst, isLast) {
 async function uploadBackgroundVideo() {
     const fileInput = document.getElementById('background-video-upload');
     if (!fileInput?.files.length) {
-        showError('Por favor selecciona un video');
+        alert('Por favor selecciona un video');
         return;
     }
 
-    showLoading('Subiendo video...');
     try {
         const formData = new FormData();
         formData.append('video', fileInput.files[0]);
+
+        // Mostrar alguna indicación visual de carga (sin usar showLoading)
+        const uploadButton = document.querySelector('[onclick="uploadBackgroundVideo()"]');
+        if (uploadButton) {
+            uploadButton.disabled = true;
+            uploadButton.textContent = 'Subiendo...';
+        }
 
         const response = await fetch('/api/upload_background', {
             method: 'POST',
@@ -469,7 +510,7 @@ async function uploadBackgroundVideo() {
         });
 
         if (response.ok) {
-            showSuccess('Video subido correctamente');
+            alert('Video subido correctamente');
             await loadBackgroundVideos();
             fileInput.value = '';
         } else {
@@ -477,11 +518,19 @@ async function uploadBackgroundVideo() {
         }
     } catch (error) {
         console.error('Error:', error);
-        showError('Error al subir el video');
+        alert('Error al subir el video');
     } finally {
-        hideLoading();
+        // Restaurar el botón
+        const uploadButton = document.querySelector('[onclick="uploadBackgroundVideo()"]');
+        if (uploadButton) {
+            uploadButton.disabled = false;
+            uploadButton.textContent = 'Subir Video';
+        }
     }
 }
+
+
+
 // Control de audio
 function toggleMute(sensorId, muted) {
     localStorage.setItem(`sensor_${sensorId}_muted`, muted);
@@ -540,6 +589,30 @@ async function updateVersusMode() {
 }
 
 
+function showLoading(message = 'Cargando...') {
+    try {
+        const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loading-text');
+        
+        if (loading && loadingText) {
+            loadingText.textContent = message;
+            loading.style.display = 'flex';
+        }
+    } catch (error) {
+        console.warn('Error showing loading:', error);
+    }
+}
+
+function hideLoading() {
+    try {
+        const loading = document.getElementById('loading');
+        if (loading) {
+            loading.style.display = 'none';
+        }
+    } catch (error) {
+        console.warn('Error hiding loading:', error);
+    }
+}
 
 
 async function loadCurrentMode() {

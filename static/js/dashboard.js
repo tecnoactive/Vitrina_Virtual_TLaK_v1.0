@@ -19,18 +19,20 @@ function formatNumber(number) {
     return new Intl.NumberFormat('es-AR').format(number);
 }
 
+
 function formatDateTime(timestamp) {
     if (!timestamp) return '-';
-    // Asegurarnos de que la fecha se interprete en la zona horaria local
-    const date = new Date(timestamp.replace(' ', 'T') + '03:00'); // Agregamos el offset de Chile
-    return date.toLocaleString('es-CL', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-    });
+    
+    // Ajustar 3 horas para compensar el desfase
+    let date = new Date(timestamp);
+    date.setHours(date.getHours() + 3);
+
+    return new Intl.DateTimeFormat('es-CL', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+        timeZone: 'America/Santiago'
+    }).format(date);
 }
 
 function showError(message) {
@@ -89,7 +91,6 @@ function updateDashboard(data) {
     if (data.activaciones_por_dia) {
         updateActivationsChart(data.activaciones_por_dia);
     }
-
     // Actualizar gráfico de sensores
     if (data.activaciones_por_sensor) {
         updateSensorChart(data.activaciones_por_sensor);
@@ -102,7 +103,7 @@ function updateDashboard(data) {
             rankingBody.innerHTML = data.ranking.map((item, index) => `
                 <tr>
                     <td>${index + 1}</td>
-                    <td>${item.nombre || 'Sin nombre'}</td>
+                    <td>${item.nombre_fantasia || 'Sin nombre'}</td>
                     <td>${item.total || 0}</td>
                     <td>${formatDateTime(item.ultima_activacion) || 'N/A'}</td>
                 </tr>
@@ -146,7 +147,7 @@ function updateDashboard(data) {
                 return `
                     <tr>
                         <td>${sensorName}</td>
-                        <td>${videoName}</td>
+                        
                         <td>${formatDateTime(item.primera_activacion || '')}</td>
                         <td>Actual</td>
                         <td>${item.total || 0}</td>
@@ -186,8 +187,15 @@ function updateActivationsChart(activacionesPorDia) {
         window.activationsChart.destroy();
     }
 
+    if (!activacionesPorDia || activacionesPorDia.length === 0) {
+        console.log("No hay datos para el gráfico");
+        return;
+    }
+
     const labels = activacionesPorDia.map(item => {
-        const date = new Date(item.fecha);
+        // Crear fecha con la zona horaria correcta
+        const [year, month, day] = item.fecha.split('-');
+        const date = new Date(year, month - 1, day);
         return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
     });
 
@@ -260,9 +268,6 @@ function updateActivationsChart(activacionesPorDia) {
                     ticks: {
                         font: {
                             size: 12
-                        },
-                        callback: function(value) {
-                            return formatNumber(value);
                         }
                     }
                 }
@@ -270,6 +275,7 @@ function updateActivationsChart(activacionesPorDia) {
         }
     });
 }
+
 
 function updateSensorChart(activacionesPorSensor) {
     const ctx = document.getElementById('sensorChart');
@@ -280,14 +286,8 @@ function updateSensorChart(activacionesPorSensor) {
         window.sensorChart.destroy();
     }
 
-    // Modificar cómo se generan las etiquetas para incluir el nombre de fantasía
-    const labels = activacionesPorSensor.map(item => {
-        const sensorNum = getFantasyNumber(item.sensor_id);
-        const nombreFantasia = item.nombre_fantasia || 
-                             (item.video_path ? item.video_path.split('/').pop().replace('.mp4', '') : '');
-        return nombreFantasia ? `Sensor ${sensorNum} - ${nombreFantasia}` : `Sensor ${sensorNum}`;
-    });
-
+    // Simplificar la generación de etiquetas - usar directamente nombre_fantasia
+    const labels = activacionesPorSensor.map(item => item.nombre_fantasia);
     const data = activacionesPorSensor.map(item => item.total);
 
     const backgroundColors = [
@@ -337,20 +337,27 @@ function updateSensorChart(activacionesPorSensor) {
                             const label = this.getLabelForValue(index);
                             // Dividir la etiqueta en múltiples líneas si es muy larga
                             if (label.length > 20) {
-                                return label.split(' - ').join('\n');
+                                return label.split(' - ');
                             }
                             return label;
-                        }
+                        },
+                        autoSkip: false,
+                        maxRotation: 45,
+                        minRotation: 45
                     }
                 },
                 y: {
-                    beginAtZero: true
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return formatNumber(value);
+                        }
+                    }
                 }
             }
         }
     });
 }
-
 
 
 function updateAssignmentHistory(data) {
@@ -412,64 +419,39 @@ function updateAssignmentHistory(data) {
     });
 }
 
-function updateRecentActivations(data) {
-    const recentBody = document.querySelector('#recent-activations tbody');
-    if (!recentBody) return;
-
-    if (!data.activaciones_recientes || data.activaciones_recientes.length === 0) {
-        recentBody.innerHTML = `
-            <tr>
-                <td colspan="3" class="text-center">
-                    <div class="alert alert-info m-3">
-                        <i class="fas fa-info-circle me-2"></i>
-                        No hay activaciones en la última hora
-                    </div>
-                </td>
-            </tr>`;
-        return;
-    }
-
-    recentBody.innerHTML = data.activaciones_recientes.map(item => `
-        <tr class="align-middle">
-            <td>
-                <div class="d-flex align-items-center">
-                    <div class="sensor-icon me-2">
-                        <i class="fas fa-broadcast-tower text-primary"></i>
-                    </div>
-                    <div class="sensor-info">
-                        <span class="badge bg-primary rounded-pill">
-                            ${item.sensor}
-                        </span>
-                    </div>
-                </div>
-            </td>
-            <td>
-                <div class="d-flex align-items-center">
-                    <div class="product-icon me-2">
-                        <i class="fas fa-cube text-secondary"></i>
-                    </div>
-                    <div class="product-info">
-                        <span class="product-name fw-bold">
-                            ${item.producto}
-                        </span>
-                    </div>
-                </div>
-            </td>
-            <td>
-                <div class="d-flex align-items-center">
-                    <div class="time-icon me-2">
-                        <i class="far fa-clock text-muted"></i>
-                    </div>
-                    <div class="time-info">
-                        <span class="timestamp">
-                            ${formatDateTime(item.timestamp)}
-                        </span>
-                    </div>
-                </div>
-            </td>
-        </tr>
-    `).join('');
+function updateRecentActivations() {
+    fetch('/api/recent-activations')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const tbody = document.getElementById('recent-activations');
+                tbody.innerHTML = data.activations.map(item => `
+                    <tr>
+                        <td>
+                            <span class="sensor-badge">
+                                <i class="fas fa-broadcast-tower"></i>
+                                ${item.sensor_numero} - ${item.nombre_fantasia || 'Sin nombre'}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="product-info">
+                                <i class="fas fa-cube"></i>
+                                <span>${item.producto}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="timestamp">
+                                <i class="far fa-clock"></i>
+                                ${formatDateTime(item.timestamp)}
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        })
+        .catch(error => console.error('Error:', error));
 }
+
 
 function updateRanking(data) {
     const tbody = document.querySelector('#ranking-table-body');
@@ -477,12 +459,12 @@ function updateRanking(data) {
 
     tbody.innerHTML = '';
     
-    if (!data || data.length === 0) {
+    if (!data || !data.ranking || data.ranking.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" class="text-center">No hay datos de ranking disponibles</td></tr>';
         return;
     }
 
-    data.forEach((item, index) => {
+    data.ranking.forEach((item, index) => {
         const row = document.createElement('tr');
         row.className = 'animate-fade-in';
         row.style.animationDelay = `${index * 0.1}s`;
@@ -497,18 +479,18 @@ function updateRanking(data) {
             </td>
             <td>
                 <div class="sensor-info">
-                    <span class="sensor-badge">Sensor ${getFantasyNumber(item.sensor_id)}</span>
-                    <span class="sensor-name">${item.nombre_fantasia || ''}</span>
+                    <i class="fas fa-broadcast-tower me-2"></i>
+                    <span class="sensor-name">${item.nombre_fantasia}</span>
                 </div>
             </td>
             <td class="text-center">
                 <div class="total-activations">
                     <span class="number">${formatNumber(item.total)}</span>
-                    <small class="text-muted">activaciones</small>
                 </div>
             </td>
             <td>
                 <div class="last-activation">
+                    <i class="far fa-clock me-2"></i>
                     <span class="date">${formatDateTime(item.ultima_activacion)}</span>
                 </div>
             </td>
@@ -526,8 +508,8 @@ async function downloadStats() {
         let params = new URLSearchParams();
         
         if (periodSelect.value === 'custom') {
-            params.append('from', `${dateFrom.value}T00:00:00`);
-            params.append('to', `${dateTo.value}T23:59:59`);
+            params.append('from', `${dateFrom.value} 00:00:00`);
+            params.append('to', `${dateTo.value} 23:59:59`);
         } else {
             const now = new Date();
             let from = new Date();
@@ -538,17 +520,20 @@ async function downloadStats() {
                     break;
                 case 'week':
                     from.setDate(from.getDate() - 7);
+                    from.setHours(0, 0, 0, 0);
                     break;
                 case 'month':
                     from.setDate(1);
+                    from.setHours(0, 0, 0, 0);
                     break;
                 case 'year':
                     from.setMonth(0, 1);
+                    from.setHours(0, 0, 0, 0);
                     break;
             }
             
-            params.append('from', from.toISOString().split('.')[0]);
-            params.append('to', now.toISOString().split('.')[0]);
+            params.append('from', `${from.toISOString().split('T')[0]} 00:00:00`);
+            params.append('to', `${now.toISOString().split('T')[0]} 23:59:59`);
         }
 
         const response = await fetch(`/api/download-stats?${params.toString()}`);
@@ -570,12 +555,31 @@ async function downloadStats() {
     }
 }
 
+
+async function loadRecentActivations() {
+    try {
+        const response = await fetch('/api/check_activaciones');
+        if (!response.ok) throw new Error('Error al cargar activaciones recientes');
+        const data = await response.json();
+        updateRecentActivations(data);
+    } catch (error) {
+        console.error('Error:', error);
+        showError('Error al cargar activaciones recientes');
+    }
+}
 async function applyFilters() {
     const periodSelect = document.getElementById('period-select');
     const dateFrom = document.getElementById('date-from');
     const dateTo = document.getElementById('date-to');
     
     let params = new URLSearchParams();
+    params.append('period', periodSelect.value);
+    
+    // Función auxiliar para formatear fecha manteniendo zona horaria local
+    const formatLocalDate = (date) => {
+        const pad = (num) => String(num).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    };
     
     if (periodSelect.value === 'custom') {
         if (!dateFrom.value || !dateTo.value) {
@@ -590,32 +594,28 @@ async function applyFilters() {
         
         switch (periodSelect.value) {
             case 'today':
-                // Cambiamos para que tome desde las 00:00 del día actual hasta ahora
                 from.setHours(0, 0, 0, 0);
-                params.append('from', from.toISOString().split('.')[0]);
-                params.append('to', now.toISOString().split('.')[0]);
+                break;
+            case '10days':
+                from.setDate(from.getDate() - 10);
                 break;
             case 'week':
                 from.setDate(from.getDate() - 7);
-                params.append('from', from.toISOString().split('.')[0]);
-                params.append('to', now.toISOString().split('.')[0]);
                 break;
             case 'month':
                 from.setDate(1);
-                params.append('from', from.toISOString().split('.')[0]);
-                params.append('to', now.toISOString().split('.')[0]);
                 break;
             case 'year':
                 from.setMonth(0, 1);
-                params.append('from', from.toISOString().split('.')[0]);
-                params.append('to', now.toISOString().split('.')[0]);
                 break;
         }
+        
+        params.append('from', formatLocalDate(from));
+        params.append('to', formatLocalDate(now));
     }
     
     await loadDashboardData(params);
 }
-
 
 function animateCounter(elementId, targetValue) {
     const element = document.getElementById(elementId);
@@ -695,9 +695,12 @@ function formatProductName(name) {
 document.addEventListener('DOMContentLoaded', () => {
     initializeDatePickers();
     setupEventListeners();
+    loadRecentActivations();
     const periodSelect = document.getElementById('period-select');
     if (periodSelect) {
         periodSelect.value = 'week';
         applyFilters();
     }
+        // Actualizar cada 30 segundos
+        setInterval(loadRecentActivations, 30000);
 });

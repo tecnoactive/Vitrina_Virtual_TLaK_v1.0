@@ -500,23 +500,9 @@ body {
 }
 
 /* Estilos para los badges de sensor */
-.sensor-badge {
-    background: #3b82f6;
-    color: white;
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-weight: 500;
-    font-size: 0.875rem;
-}
 
 /* Estilos para los productos */
-.product-name {
-    font-weight: 500;
-    color: #1e293b;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
+
 
 .product-icon {
     color: #3b82f6;
@@ -609,14 +595,7 @@ body {
 }
 
 /* Estilos para el sensor badge */
-.sensor-badge {
-    background: #3b82f6;
-    color: white;
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-weight: 500;
-    font-size: 0.875rem;
-}
+
 
 /* Estilos para la información del producto */
 .product-info {
@@ -634,10 +613,7 @@ body {
     justify-content: center;
 }
 
-.product-name {
-    font-weight: 500;
-    color: #1e293b;
-}
+
 
 /* Estilos para los badges de estado */
 .status-badge {
@@ -809,12 +785,26 @@ body {
 .sensor-info {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+}
+
+.sensor-info i {
+    color: #1976d2;
+    margin-right: 0.5rem;
 }
 
 .sensor-name {
     font-weight: 500;
-    color: #1e293b;
+    color: #2c3e50;
+}
+
+.last-activation {
+    display: flex;
+    align-items: center;
+    color: #666;
+}
+
+.last-activation i {
+    color: #9e9e9e;
 }
 
 /* Total de activaciones */
@@ -876,10 +866,12 @@ body {
     font-weight: 600;
     color: #495057;
     border-bottom: 2px solid #dee2e6;
+    text-transform: uppercase;
+    font-size: 0.85rem;
 }
 
 #recent-activations td {
-    padding: 1rem;
+    padding: 0.75rem 1rem;
     vertical-align: middle;
     border-bottom: 1px solid #dee2e6;
 }
@@ -889,37 +881,83 @@ body {
     transition: background-color 0.2s ease;
 }
 
-.sensor-info .badge {
-    font-size: 0.85rem;
+.badge {
     padding: 0.5em 1em;
+    font-size: 0.85rem;
 }
 
-.product-name {
-    color: #2c3e50;
-    font-size: 0.95rem;
+.badge i {
+    font-size: 0.8rem;
 }
+
 
 .timestamp {
     color: #6c757d;
     font-size: 0.9rem;
 }
 
-.sensor-icon, .product-icon, .time-icon {
-    width: 24px;
-    height: 24px;
+/* Animación para nuevas filas */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+#recent-activations tr {
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+#recent-activations-table {
+    margin-bottom: 0;
+}
+
+#recent-activations-table thead th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    color: #495057;
+    font-weight: 600;
+    padding: 1rem;
+}
+
+#recent-activations-table td {
+    padding: 1rem;
+    vertical-align: middle;
+}
+
+.sensor-badge {
+    display: inline-flex;
+    align-items: center;
+    background-color: #e3f2fd;
+    color: #1976d2;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.sensor-badge i {
+    margin-right: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.product-info {
     display: flex;
     align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background-color: rgba(13, 110, 253, 0.1);
 }
 
-.product-icon {
-    background-color: rgba(108, 117, 125, 0.1);
+.product-info i {
+    margin-right: 0.5rem;
+    color: #757575;
 }
 
-.time-icon {
-    background-color: rgba(108, 117, 125, 0.1);
+.timestamp {
+    display: flex;
+    align-items: center;
+    color: #666;
+}
+
+.timestamp i {
+    margin-right: 0.5rem;
+    color: #9e9e9e;
 }
 
 /* Animación para nuevas filas */

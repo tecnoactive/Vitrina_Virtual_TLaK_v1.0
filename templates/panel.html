@@ -9,6 +9,8 @@
     <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -149,6 +151,36 @@
               {% endfor %}
           </div>
       </div>
+
+<!-- Sección de Videos de Fondo -->
+<div class="system-config">
+    <h2>Videos de Fondo</h2>
+    <div class="config-section">
+        <div class="form-group">
+            <label class="file-input-trigger">
+                <input type="file" 
+                       id="background-video-upload" 
+                       accept="video/mp4,video/webm,video/mov" 
+                       class="hidden-content">
+                Seleccionar Video
+            </label>
+            <div class="button-group">
+                <button onclick="uploadBackgroundVideo()" 
+                        class="btn-action primary">
+                    Subir Video
+                </button>
+            </div>
+        </div>
+        
+        <div class="video-section">
+            <h3>Playlist Actual</h3>
+            <div id="background-video-list" class="video-list">
+                <!-- Los videos se cargarán aquí dinámicamente -->
+            </div>
+        </div>
+    </div>
+</div>
+    
         <!-- Monitor del Sistema -->
         <div class="monitor-container" id="monitor">
             <h2>Monitor del Sistema</h2>
@@ -166,10 +198,14 @@
         </div>
     </div>
 
-    <!-- Loading -->
-    <div class="loading" id="loading">
+<!-- Loading spinner -->
+<!-- Loading spinner -->
+<div id="loading" class="loading">
+    <div class="loading-content">
         <div class="spinner"></div>
+        <span id="loading-text">Cargando...</span>
     </div>
+</div>
 
     <!-- Scripts -->
     <script src="/static/js/panel.js"></script>
@@ -571,6 +607,27 @@ document.querySelectorAll('.file-input').forEach(input => {
         document.addEventListener('DOMContentLoaded', () => {
             updateVersusMode();
         });
+
+        const style = document.createElement('style');
+style.textContent = `
+    .loading-message {
+        padding: 1rem;
+        text-align: center;
+        color: var(--secondary);
+    }
+    
+    .error-message {
+        padding: 1rem;
+        text-align: center;
+        color: var(--danger);
+    }
+    
+    .button:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+`;
+document.head.appendChild(style);
     </script>
 </body>
 </html>

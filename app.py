@@ -15,6 +15,7 @@ import pandas as pd
 import json
 import pytz
 import logging
+santiago_tz = pytz.timezone('America/Santiago')
 
 
 logging.basicConfig(level=logging.INFO)
@@ -22,8 +23,6 @@ logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 app.secret_key = 'admin'
-
-santiago_tz = pytz.timezone('America/Santiago')
 
 # Configuración
 UPLOAD_FOLDER = '/home/pi/vitrina/static/videos'
@@ -254,257 +253,163 @@ def panel():
 
 # para exportar estadisticas
 
+
 @app.route('/api/download-stats')
 def download_stats():
     try:
         from_date = request.args.get('from')
         to_date = request.args.get('to')
-        
+        from_datetime = santiago_tz.localize(datetime.strptime(from_date, '%Y-%m-%d %H:%M:%S'))
+        to_datetime = santiago_tz.localize(datetime.strptime(to_date, '%Y-%m-%d %H:%M:%S'))
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Mapeo de GPIO a números de fantasía
-        gpio_to_fantasy = {
-            '27': '1', '17': '2', '5': '3', '6': '4',
-            '13': '5', '18': '6', '23': '7', '24': '8'
-        }
-
-        # Consulta para obtener las activaciones con información completa del sensor
-        query_activaciones = """
-        SELECT 
-            a.sensor_id,
-            datetime(a.timestamp, 'localtime') as timestamp,
-            s.nombre_fantasia,
-            sv.video_path
-        FROM activaciones a
-        LEFT JOIN sensores s ON a.sensor_id = s.gpio_pin
-        LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
-        WHERE a.timestamp BETWEEN ? AND ?
-        ORDER BY a.timestamp DESC
+        # Activaciones básicas
+        basic_query = """
+            SELECT 
+                a.sensor_id,
+                es.sensor_numero,
+                es.nombre_fantasia,
+                datetime(a.timestamp) as timestamp,
+                sv.video_path
+            FROM activaciones a
+            LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+            LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
+            WHERE datetime(a.timestamp) BETWEEN ? AND ?
+            ORDER BY a.timestamp DESC
         """
-        
-        cursor.execute(query_activaciones, (from_date, to_date))
-        results = cursor.fetchall()
 
-        # Crear DataFrame principal
-        df = pd.DataFrame(results, columns=['Sensor GPIO', 'Fecha/Hora', 'Nombre Fantasia', 'Video Path'])
-        
-        # Función para obtener el nombre del sensor
-        def get_sensor_name(row):
-            gpio_str = str(row['Sensor GPIO'])
-            fantasy_num = gpio_to_fantasy.get(gpio_str, gpio_str)
-            
-            # Primero intentar usar el nombre de fantasía del sensor
-            nombre = row['Nombre Fantasia']
-            
-            # Si no hay nombre de fantasía, intentar usar el nombre del video
-            if pd.isna(nombre) or nombre == '':
-                video_path = row['Video Path']
-                if pd.notna(video_path) and video_path:
-                    # Extraer el nombre del archivo sin la extensión
-                    video_name = video_path.split('/')[-1]
-                    nombre = video_name.rsplit('.', 1)[0]  # Eliminar la extensión .mp4
-            
-            # Si aún no hay nombre, usar solo el número del sensor
-            if pd.isna(nombre) or nombre == '':
-                return f"Sensor {fantasy_num}"
-            
-            return f"Sensor {fantasy_num} - {nombre}"
+        # Hora más popular
+        popular_hour_query = """
+            SELECT 
+                strftime('%H', datetime(timestamp)) as hora,
+                COUNT(*) as total
+            FROM activaciones 
+            WHERE datetime(timestamp) BETWEEN ? AND ?
+            GROUP BY hora
+            ORDER BY total DESC
+            LIMIT 1
+        """
 
-        # Aplicar la función para obtener el nombre del sensor
-        df['Sensor'] = df.apply(get_sensor_name, axis=1)
-        
-        # Convertir la columna de fecha explícitamente
-        df['Fecha/Hora'] = pd.to_datetime(df['Fecha/Hora'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-        
-        # Crear resumen por sensor
-        resumen_sensor = df.groupby(['Sensor']).agg({
-            'Fecha/Hora': [
-                ('Total Activaciones', 'count'),
-                ('Primera Activación', 'min'),
-                ('Última Activación', 'max')
-            ]
-        }).reset_index()
-        
-        # Aplanar las columnas multiíndice
-        resumen_sensor.columns = ['Sensor', 'Total Activaciones', 'Primera Activación', 'Última Activación']
-        
-        # Formatear las fechas después de los cálculos
-        df['Fecha/Hora'] = df['Fecha/Hora'].dt.strftime('%d/%m/%Y %H:%M:%S')
-        resumen_sensor['Primera Activación'] = pd.to_datetime(resumen_sensor['Primera Activación']).dt.strftime('%d/%m/%Y %H:%M:%S')
-        resumen_sensor['Última Activación'] = pd.to_datetime(resumen_sensor['Última Activación']).dt.strftime('%d/%m/%Y %H:%M:%S')
-        
-        resumen_sensor = resumen_sensor.sort_values('Total Activaciones', ascending=False)
+        # Día con más activaciones
+        busiest_day_query = """
+            SELECT 
+                date(datetime(timestamp)) as fecha,
+                COUNT(*) as total
+            FROM activaciones
+            WHERE datetime(timestamp) BETWEEN ? AND ?
+            GROUP BY fecha
+            ORDER BY total DESC
+            LIMIT 1
+        """
+
+        # Top 3 de versus (pares de sensores que se activan juntos en ventana de 5 minutos)
+        versus_query = """
+            WITH versus AS (
+                SELECT 
+                    a1.sensor_id as sensor1,
+                    a2.sensor_id as sensor2,
+                    date(datetime(a1.timestamp)) as fecha,
+                    COUNT(DISTINCT a1.id) as versus_count
+                FROM activaciones a1
+                JOIN activaciones a2 ON 
+                    a1.sensor_id < a2.sensor_id
+                    AND abs(strftime('%s', a1.timestamp) - strftime('%s', a2.timestamp)) <= 300
+                    AND date(datetime(a1.timestamp)) = date(datetime(a2.timestamp))
+                WHERE datetime(a1.timestamp) BETWEEN ? AND ?
+                GROUP BY a1.sensor_id, a2.sensor_id, fecha
+            )
+            SELECT 
+                es1.nombre_fantasia as sensor1_name,
+                es2.nombre_fantasia as sensor2_name,
+                SUM(v.versus_count) as total_versus
+            FROM versus v
+            JOIN etiquetas_sensores es1 ON v.sensor1 = es1.gpio_pin
+            JOIN etiquetas_sensores es2 ON v.sensor2 = es2.gpio_pin
+            GROUP BY v.sensor1, v.sensor2
+            ORDER BY total_versus DESC
+            LIMIT 3
+        """
+
+        # Ejecutar consultas
+        cursor.execute(basic_query, (from_datetime.strftime('%Y-%m-%d %H:%M:%S'), to_datetime.strftime('%Y-%m-%d %H:%M:%S')))
+        basic_data = cursor.fetchall()
+
+        cursor.execute(popular_hour_query, (from_datetime.strftime('%Y-%m-%d %H:%M:%S'), to_datetime.strftime('%Y-%m-%d %H:%M:%S')))
+        popular_hour = cursor.fetchone()
+
+        cursor.execute(busiest_day_query, (from_datetime.strftime('%Y-%m-%d %H:%M:%S'), to_datetime.strftime('%Y-%m-%d %H:%M:%S')))
+        busiest_day = cursor.fetchone()
+
+        cursor.execute(versus_query, (from_datetime.strftime('%Y-%m-%d %H:%M:%S'), to_datetime.strftime('%Y-%m-%d %H:%M:%S')))
+        versus_data = cursor.fetchall()
+
+        # Crear DataFrames
+        df_basic = pd.DataFrame(basic_data, 
+            columns=['Sensor ID', 'Número', 'Nombre', 'Fecha/Hora', 'Video'])
+
+        # Procesar datos básicos
+        df_basic['Fecha/Hora'] = pd.to_datetime(df_basic['Fecha/Hora'])
+        df_basic['Fecha/Hora'] = df_basic['Fecha/Hora'].dt.tz_localize('UTC').dt.tz_convert('America/Santiago') + pd.Timedelta(hours=3)
+        df_basic['Fecha/Hora'] = df_basic['Fecha/Hora'].dt.strftime('%d/%m/%Y %H:%M:%S')
 
         # Crear Excel con formato
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
             
-            # Formato para títulos
+            # Formatos
             title_format = workbook.add_format({
-                'bold': True,
-                'font_size': 14,
-                'align': 'center',
-                'valign': 'vcenter',
-                'bg_color': '#2c3e50',
-                'font_color': 'white'
+                'bold': True, 'font_size': 14, 'align': 'center',
+                'bg_color': '#2c3e50', 'font_color': 'white'
             })
-            
-            # Formato para encabezados
             header_format = workbook.add_format({
-                'bold': True,
-                'bg_color': '#34495e',
-                'font_color': 'white',
-                'border': 1
-            })
-
-            # Formato para datos
-            data_format = workbook.add_format({
-                'align': 'center',
-                'border': 1
+                'bold': True, 'bg_color': '#34495e', 
+                'font_color': 'white', 'border': 1
             })
 
             # Hoja de Resumen
-            worksheet_resumen = workbook.add_worksheet('Resumen')
+            worksheet = workbook.add_worksheet('Resumen')
+            worksheet.write('A1', 'RESUMEN DE ACTIVACIONES', title_format)
+            worksheet.write('A3', 'Hora más popular:', header_format)
+            worksheet.write('B3', f"{popular_hour[0]}:00 ({popular_hour[1]} activaciones)")
+            worksheet.write('A4', 'Día más activo:', header_format)
+            worksheet.write('B4', f"{busiest_day[0]} ({busiest_day[1]} activaciones)")
             
-            # Título del reporte
-            periodo = f"Período: {pd.to_datetime(from_date).strftime('%d/%m/%Y')} - {pd.to_datetime(to_date).strftime('%d/%m/%Y')}"
-            worksheet_resumen.merge_range('A1:D1', 'REPORTE DE ACTIVACIONES VITRINA DIGITAL', title_format)
-            worksheet_resumen.merge_range('A2:D2', periodo, header_format)
+            # Top 3 Versus
+            worksheet.write('A6', 'TOP 3 VERSUS', title_format)
+            worksheet.write('A7', 'Sensor 1', header_format)
+            worksheet.write('B7', 'Sensor 2', header_format)
+            worksheet.write('C7', 'Total', header_format)
             
-            # Estadísticas generales
-            worksheet_resumen.write('A4', 'Estadísticas Generales', header_format)
-            worksheet_resumen.write('A5', 'Total Activaciones:', data_format)
-            worksheet_resumen.write('B5', len(df), data_format)
-            
-            # Sensor más activo
-            if not resumen_sensor.empty:
-                sensor_mas_activo = resumen_sensor.iloc[0]
-                worksheet_resumen.write('A7', 'Sensor Más Activo:', header_format)
-                worksheet_resumen.write('B7', sensor_mas_activo['Sensor'], data_format)
-                worksheet_resumen.write('A8', 'Activaciones:', data_format)
-                worksheet_resumen.write('B8', sensor_mas_activo['Total Activaciones'], data_format)
+            for i, versus in enumerate(versus_data):
+                worksheet.write(f'A{8+i}', versus[0])
+                worksheet.write(f'B{8+i}', versus[1])
+                worksheet.write(f'C{8+i}', versus[2])
 
-            # Guardar los DataFrames
-            df[['Sensor', 'Fecha/Hora']].to_excel(
-                writer, 
-                sheet_name='Activaciones Detalle', 
-                index=False,
-                startrow=1
-            )
-            
-            resumen_sensor[['Sensor', 'Total Activaciones', 'Primera Activación', 'Última Activación']].to_excel(
-                writer, 
-                sheet_name='Resumen por Sensor', 
-                index=False,
-                startrow=1
-            )
-
-            # Ajustar columnas en todas las hojas
-            for worksheet in writer.sheets.values():
-                worksheet.set_column('A:Z', 15)
+            # Hoja de Activaciones Detalladas
+            df_basic.to_excel(writer, sheet_name='Detalle', startrow=2, index=False)
+            detail_sheet = writer.sheets['Detalle']
+            detail_sheet.write('A1', 'DETALLE DE ACTIVACIONES', title_format)
+            detail_sheet.set_column('A:C', 15)
+            detail_sheet.set_column('D:D', 20)
+            detail_sheet.set_column('E:E', 30)
 
         output.seek(0)
-
-        # Nombre del archivo con timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'estadisticas_vitrina_{timestamp}.xlsx'
-
         return send_file(
             output,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
-            download_name=filename
+            download_name=f'estadisticas_vitrina_{datetime.now(santiago_tz).strftime("%Y%m%d_%H%M%S")}.xlsx'
         )
 
     except Exception as e:
         print(f"Error en download_stats: {str(e)}")
-        return jsonify({
-            'error': 'Error al generar el archivo de estadísticas',
-            'details': str(e)
-        }), 500
+        return jsonify({'error': str(e)}), 500
     finally:
         if 'conn' in locals():
             conn.close()
-
-@app.route('/api/export-stats')
-@login_required
-def export_stats():
-    try:
-        from_date = request.args.get('from', '')
-        to_date = request.args.get('to', '')
-        format = request.args.get('format', 'csv')
-        
-        if not from_date or not to_date:
-            today = datetime.now()
-            from_date = today.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d %H:%M:%S')
-            to_date = today.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%d %H:%M:%S')
-        
-        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
-            query = '''
-                SELECT 
-                    es.sensor_numero,
-                    es.nombre_fantasia,
-                    a.timestamp,
-                    a.start_time,
-                    a.end_time,
-                    ROUND(CAST(a.duration AS FLOAT) / 1000, 2) as duracion_segundos,
-                    a.completed,
-                    sv.video_path,
-                    date(a.timestamp) as fecha,
-                    time(a.timestamp) as hora
-                FROM activaciones a
-                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
-                LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
-                WHERE a.timestamp BETWEEN ? AND ?
-                ORDER BY a.timestamp DESC
-            '''
-            
-            df = pd.read_sql_query(query, conn, params=(from_date, to_date))
-            
-            filename = f'estadisticas_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
-            
-            if format == 'excel':
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, sheet_name='Activaciones', index=False)
-                    workbook = writer.book
-                    worksheet = writer.sheets['Activaciones']
-                    
-                    header_format = workbook.add_format({
-                        'bold': True,
-                        'bg_color': '#0066cc',
-                        'color': 'white'
-                    })
-                    
-                    for col_num, value in enumerate(df.columns.values):
-                        worksheet.write(0, col_num, value, header_format)
-                        worksheet.set_column(col_num, col_num, 15)
-                
-                output.seek(0)
-                return send_file(
-                    output,
-                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    as_attachment=True,
-                    download_name=f'{filename}.xlsx'
-                )
-            
-            output = StringIO()
-            df.to_csv(output, index=False)
-            return Response(
-                output.getvalue(),
-                mimetype='text/csv',
-                headers={
-                    'Content-Disposition': f'attachment; filename={filename}.csv'
-                }
-            )
-            
-    except Exception as e:
-        app.logger.error(f"Error exportando estadísticas: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
 
 def update_hourly_stats():
     with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
@@ -780,6 +685,7 @@ def get_detailed_report():
         app.logger.error(f"Error en reporte detallado: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/register_activation', methods=['POST'])
 def register_activation():
     try:
@@ -789,37 +695,32 @@ def register_activation():
         completed = data.get('completed', False)
         
         if not sensor_id:
-            return jsonify({'error': 'sensor_id es requerido'}), 400
+            return jsonify({'error': 'sensor_id requerido'}), 400
 
-        # Obtener el video_path asociado al sensor
+        current_time = datetime.now(santiago_tz)
+        timestamp = current_time.strftime('%Y-%m-%d %H:%M:%S')
+
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             c.execute('SELECT video_path FROM sensor_videos WHERE sensor_id = ?', (sensor_id,))
-            result = c.fetchone()
-            video_path = result[0] if result else None
+            video_path = c.fetchone()[0] if c.fetchone() else None
 
-            # Registrar la activación
-            current_time = datetime.now(santiago_tz)
             c.execute('''
                 INSERT INTO activaciones 
                 (sensor_id, timestamp, start_time, end_time, duration, completed, video_path)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
-                sensor_id,
-                current_time,
-                current_time - timedelta(milliseconds=duration),
-                current_time,
-                duration,
-                completed,
-                video_path
+                sensor_id, timestamp, timestamp, timestamp,
+                duration, completed, video_path
             ))
             conn.commit()
 
-        return jsonify({'success': True, 'message': 'Activación registrada correctamente'})
+        return jsonify({'success': True})
     
     except Exception as e:
-        logging.error(f"Error en register_activation: {str(e)}")
+        logging.error(f"Error: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
 
 def register_video_change(sensor_id, old_video, new_video):
     with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
@@ -1054,35 +955,38 @@ def remove_background_video(video_id):
     except Exception as e:
         app.logger.error(f"Error eliminando video: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-
 @app.route('/api/check_activaciones')
 @login_required
 def check_activaciones():
     try:
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
+            hora_anterior = (datetime.now(santiago_tz) - timedelta(hours=1))
             
-            # Obtener las últimas 50 activaciones
             c.execute('''
                 SELECT 
                     a.id,
                     a.sensor_id,
+                    es.sensor_numero,
                     es.nombre_fantasia,
-                    a.timestamp,
+                    sv.video_path,
+                    datetime(timestamp, 'localtime') as timestamp_local,
                     a.completed
                 FROM activaciones a
                 LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+                LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
+                WHERE datetime(timestamp, 'localtime') >= datetime(?, 'localtime')
                 ORDER BY a.timestamp DESC
-                LIMIT 50
-            ''')
+            ''', (hora_anterior.strftime('%Y-%m-%d %H:%M:%S'),))
             
             activaciones = [{
                 'id': row[0],
                 'sensor_id': row[1],
-                'nombre': row[2] or f'Sensor {row[1]}',
-                'timestamp': row[3],
-                'completed': row[4]
+                'sensor_numero': row[2],
+                'nombre': row[3] or f'Sensor {row[1]}',
+                'producto': os.path.splitext(os.path.basename(row[4]))[0] if row[4] else 'Sin producto',
+                'timestamp': row[5],
+                'completed': row[6]
             } for row in c.fetchall()]
             
             return jsonify({
@@ -1458,8 +1362,8 @@ def get_public_background_videos():
     with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
         c = conn.cursor()
         c.execute('SELECT id, video_path, orden FROM background_videos ORDER BY orden')
-        videos = [{'id': row[0], 'video_path': row[1], 'orden': row[2]} 
-                 for row in c.fetchall()]
+        videos = [{'id': row[0], 'video_path': row[1], 'orden': row[2]} for row in c.fetchall()]
+        app.logger.info(f"Videos de fondo encontrados: {videos}")
         return jsonify(videos)
 
 @app.route('/api/move_background', methods=['POST'])
@@ -1575,227 +1479,159 @@ def get_uptime():
             return f"{days} días, {hours} horas, {minutes} minutos"
     except FileNotFoundError:
         return "N/A"
+    
 
 @app.route('/api/dashboard-stats', methods=['GET'])
 @login_required
 def get_dashboard_stats():
-    try:
-        from_date = request.args.get('from')
-        to_date = request.args.get('to')
-        
-        if not from_date or not to_date:
-            to_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            from_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+   try:
+       from_date = request.args.get('from')
+       to_date = request.args.get('to')
+       
+       if not from_date or not to_date:
+           to_date = datetime.now(santiago_tz).strftime('%Y-%m-%d %H:%M:%S')
+           from_date = (datetime.now(santiago_tz) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
 
-        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
-            cursor = conn.cursor()
+       with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
+           cursor = conn.cursor()
 
-            # 1. Total activaciones en el período
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM activaciones 
-                WHERE timestamp BETWEEN ? AND ?
-            """, (from_date, to_date))
-            total_activaciones = cursor.fetchone()[0]
+           # Total activaciones en el período
+           cursor.execute("""
+               SELECT COUNT(*) 
+               FROM activaciones 
+               WHERE datetime(timestamp, 'localtime') BETWEEN ? AND ?
+           """, (from_date, to_date))
+           total_activaciones = cursor.fetchone()[0]
 
-            # 2. Activaciones de hoy
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM activaciones 
-                WHERE date(timestamp) = date('now')
-            """)
-            activaciones_hoy = cursor.fetchone()[0]
+           # Activaciones de hoy
+           cursor.execute("""
+               SELECT COUNT(*) 
+               FROM activaciones 
+               WHERE date(datetime(timestamp, 'localtime')) = date('now', 'localtime')
+           """)
+           activaciones_hoy = cursor.fetchone()[0]
 
-            # 3. Activaciones última semana
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM activaciones 
-                WHERE timestamp >= datetime('now', '-7 days')
-            """)
-            activaciones_semana = cursor.fetchone()[0]
+           # Activaciones última semana
+           cursor.execute("""
+               SELECT COUNT(*) 
+               FROM activaciones 
+               WHERE datetime(timestamp, 'localtime') >= datetime('now', '-7 days', 'localtime')
+           """)
+           activaciones_semana = cursor.fetchone()[0]
 
-            # 4. Activaciones este mes
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM activaciones 
-                WHERE strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')
-            """)
-            activaciones_mes = cursor.fetchone()[0]
-
-            # 5. Activaciones por sensor
-            cursor.execute("""
-                SELECT 
-                    a.sensor_id,
-                    s.nombre_fantasia,
-                    sv.video_path,
-                    COUNT(*) as total
-                FROM activaciones a
-                LEFT JOIN sensores s ON a.sensor_id = s.gpio_pin
-                LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
-                WHERE a.timestamp BETWEEN ? AND ?
-                GROUP BY a.sensor_id, s.nombre_fantasia, sv.video_path
-                ORDER BY total DESC
-            """, (from_date, to_date))
-            
-            activaciones_por_sensor = []
-            for row in cursor.fetchall():
-                sensor_id, nombre_fantasia, video_path, total = row
-                nombre_display = nombre_fantasia if nombre_fantasia else (
-                    video_path.split('/')[-1].replace('.mp4', '') if video_path else f'Sensor {sensor_id}'
-                )
-                activaciones_por_sensor.append({
-                    'sensor_id': sensor_id,
-                    'nombre_fantasia': nombre_display,
-                    'total': total
-                })
-
-            # 6. Activaciones por día
-            cursor.execute("""
-                SELECT 
-                    date(timestamp) as fecha,
-                    COUNT(*) as total
-                FROM activaciones
-                WHERE timestamp BETWEEN ? AND ?
-                GROUP BY date(timestamp)
-                ORDER BY fecha
-            """, (from_date, to_date))
-            
-            activaciones_por_dia = [
-                {'fecha': row[0], 'total': row[1]}
-                for row in cursor.fetchall()
-            ]
-
-            # 7. Ranking de sensores (nuevo)
-            cursor.execute("""
-                SELECT 
-                    a.sensor_id,
-                    s.nombre_fantasia,
-                    sv.video_path,
-                    COUNT(*) as total,
-                    MAX(datetime(a.timestamp, 'localtime')) as ultima_activacion
-                FROM activaciones a
-                LEFT JOIN sensores s ON a.sensor_id = s.gpio_pin
-                LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
-                WHERE a.timestamp BETWEEN ? AND ?
-                GROUP BY a.sensor_id, s.nombre_fantasia, sv.video_path
-                ORDER BY total DESC
-                LIMIT 10
-            """, (from_date, to_date))
-            
-            ranking = []
-            for row in cursor.fetchall():
-                sensor_id, nombre_fantasia, video_path, total, ultima_activacion = row
-                nombre_display = nombre_fantasia if nombre_fantasia else (
-                    video_path.split('/')[-1].replace('.mp4', '') if video_path else f'Sensor {sensor_id}'
-                )
-                ranking.append({
-                    'nombre': nombre_display,
-                    'total': total,
-                    'ultima_activacion': ultima_activacion
-                })
-
-            # 8. Activaciones recientes (actualizado)
-            cursor.execute("""
-                SELECT 
-                    a.sensor_id,
-                    s.nombre_fantasia,
-                    sv.video_path,
-                    datetime(a.timestamp, 'localtime') as timestamp
-                FROM activaciones a
-                LEFT JOIN sensores s ON a.sensor_id = s.gpio_pin
-                LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
-                WHERE a.timestamp >= datetime('now', '-1 hour', 'localtime')
-                ORDER BY a.timestamp DESC
-                LIMIT 20
-            """)
-
-            activaciones_recientes = []
-            for row in cursor.fetchall():
-                sensor_id, nombre_fantasia, video_path, timestamp = row
-                
-                # Mapeo de GPIO a número de sensor
-                gpio_to_sensor = {
-                    '27': '1',
-                    '17': '2',
-                    '5': '3',
-                    '6': '4',
-                    '13': '5',
-                    '18': '6',
-                    '23': '7',
-                    '24': '8'
-                }
-                
-                sensor_numero = gpio_to_sensor.get(str(sensor_id), str(sensor_id))
-                nombre_sensor = f'Sensor {sensor_numero}'
-                
-                # Obtener el nombre del producto desde nombre_fantasia o video_path
-                producto_nombre = nombre_fantasia if nombre_fantasia else (
-                    video_path.split('/')[-1].replace('.mp4', '') if video_path else 'Sin nombre'
-                )
-                
-                activaciones_recientes.append({
-                    'sensor': nombre_sensor,
-                    'producto': producto_nombre,
-                    'timestamp': timestamp
-                })
-                
-        return jsonify({
-            'total_activaciones': total_activaciones,
-            'activaciones_hoy': activaciones_hoy,
-            'activaciones_semana': activaciones_semana,
-            'activaciones_mes': activaciones_mes,
-            'activaciones_por_sensor': activaciones_por_sensor,
-            'activaciones_por_dia': activaciones_por_dia,
-            'ranking': ranking,
-            'activaciones_recientes': activaciones_recientes
-        })
-
-    except Exception as e:
-        print(f"Error en get_dashboard_stats: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+           # Activaciones este mes
+           cursor.execute("""
+               SELECT COUNT(*) 
+               FROM activaciones 
+               WHERE strftime('%Y-%m', datetime(timestamp, 'localtime')) = strftime('%Y-%m', 'now', 'localtime')
+           """)
+           activaciones_mes = cursor.fetchone()[0]
 
 
-@app.route('/api/assignment-history')
-@login_required
-def get_assignment_history():
-    try:
-        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
-            c = conn.cursor()
-            c.execute('''
-                WITH RankedAssignments AS (
-                    SELECT 
-                        sv.sensor_id,
-                        es.nombre_fantasia,
-                        sv.video_path,
-                        a.timestamp as start_date,
-                        LEAD(a.timestamp) OVER (
-                            PARTITION BY sv.sensor_id 
-                            ORDER BY a.timestamp
-                        ) as end_date,
-                        COUNT(a.id) as total_activations
-                    FROM sensor_videos sv
-                    LEFT JOIN etiquetas_sensores es ON sv.sensor_id = es.gpio_pin
-                    LEFT JOIN activaciones a ON sv.sensor_id = a.sensor_id
-                    GROUP BY sv.sensor_id, sv.video_path
-                    ORDER BY start_date DESC
-                )
-                SELECT * FROM RankedAssignments
-                WHERE start_date IS NOT NULL
-            ''')
-            
-            history = [{
-                'sensor_id': row[0],
-                'nombre': row[1],
-                'video': row[2],
-                'fecha_inicio': row[3],
-                'fecha_fin': row[4] or 'Actual',
-                'total_activaciones': row[5]
-            } for row in c.fetchall()]
-            
-            return jsonify(history)
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+           # Activaciones por día incluyendo hoy
+           cursor.execute("""
+               SELECT 
+                   date(timestamp, 'localtime') as fecha,
+                   COUNT(*) as total
+               FROM activaciones
+               WHERE datetime(timestamp, 'localtime') BETWEEN ? AND ?
+               GROUP BY date(timestamp, 'localtime')
+               ORDER BY fecha
+           """, (from_date, to_date))
+           
+           activaciones_por_dia = [{
+               'fecha': row[0],
+               'total': row[1]
+           } for row in cursor.fetchall()]
+
+           # Activaciones por sensor (usando el mismo rango de fechas)
+           cursor.execute("""
+               SELECT 
+                   a.sensor_id,
+                   es.nombre_fantasia,
+                   es.sensor_numero,
+                   sv.video_path,
+                   COUNT(*) as total,
+                   MAX(datetime(timestamp, 'localtime')) as ultima_activacion
+               FROM activaciones a
+               LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+               LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
+               WHERE datetime(a.timestamp, 'localtime') BETWEEN ? AND ?
+               GROUP BY a.sensor_id, es.nombre_fantasia, es.sensor_numero, sv.video_path
+               ORDER BY total DESC
+           """, (from_date, to_date))
+
+
+           # Activaciones por sensor
+           cursor.execute("""
+               SELECT 
+                   a.sensor_id,
+                   es.nombre_fantasia,
+                   es.sensor_numero,
+                   sv.video_path,
+                   COUNT(*) as total,
+                   MAX(datetime(timestamp, 'localtime')) as ultima_activacion
+               FROM activaciones a
+               LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+               LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
+               WHERE datetime(a.timestamp, 'localtime') BETWEEN ? AND ?
+               GROUP BY a.sensor_id, es.nombre_fantasia, es.sensor_numero, sv.video_path
+               ORDER BY total DESC
+           """, (from_date, to_date))
+
+           activaciones_por_sensor = []
+           for row in cursor.fetchall():
+               sensor_id, nombre_fantasia, sensor_numero, video_path, total, ultima_activacion = row
+               nombre_display = f"{sensor_numero} - {nombre_fantasia}" if nombre_fantasia else f"Sensor {sensor_id}"
+               activaciones_por_sensor.append({
+                   'sensor_id': sensor_id,
+                   'nombre_fantasia': nombre_display,
+                   'total': total,
+                   'ultima_activacion': ultima_activacion
+               })
+
+           # Activaciones recientes (últimas 10)
+           cursor.execute("""
+               SELECT 
+                   a.sensor_id,
+                   es.nombre_fantasia,
+                   es.sensor_numero,
+                   sv.video_path,
+                   datetime(a.timestamp, 'localtime') as timestamp
+               FROM activaciones a
+               LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+               LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
+               ORDER BY a.timestamp DESC
+               LIMIT 10
+           """)
+
+           activaciones_recientes = []
+           for row in cursor.fetchall():
+               sensor_id, nombre_fantasia, sensor_numero, video_path, timestamp = row
+               producto_nombre = nombre_fantasia if nombre_fantasia else (
+                   os.path.splitext(os.path.basename(video_path))[0] if video_path else 'Sin nombre'
+               )
+               activaciones_recientes.append({
+                   'sensor': sensor_numero,
+                   'producto': producto_nombre,
+                   'timestamp': timestamp
+               })
+
+           return jsonify({
+               'total_activaciones': total_activaciones,
+               'activaciones_hoy': activaciones_hoy,
+               'activaciones_semana': activaciones_semana,
+               'activaciones_mes': activaciones_mes,
+               'activaciones_por_sensor': activaciones_por_sensor,
+               'activaciones_por_dia': activaciones_por_dia,
+               'ranking': activaciones_por_sensor[:10],
+               'activaciones_recientes': activaciones_recientes
+           })
+
+   except Exception as e:
+       app.logger.error(f"Error en get_dashboard_stats: {str(e)}")
+       return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/update-extra-content', methods=['POST'])
 @login_required
@@ -1882,7 +1718,6 @@ def get_activations():
         print(f"Error en /api/activations: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/api/recent-activations')
 @login_required
 def get_recent_activations():
@@ -1890,31 +1725,28 @@ def get_recent_activations():
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             
-            # Obtener activaciones de la última hora
-            one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
-            
+            # Obtener las últimas 10 activaciones
             c.execute('''
                 SELECT 
                     a.sensor_id,
+                    es.sensor_numero,
                     es.nombre_fantasia,
-                    a.timestamp,
-                    a.completed
+                    sv.video_path,
+                    datetime(a.timestamp, 'localtime') as timestamp
                 FROM activaciones a
                 LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
-                WHERE a.timestamp >= ?
+                LEFT JOIN sensor_videos sv ON a.sensor_id = sv.sensor_id
                 ORDER BY a.timestamp DESC
-            ''', (one_hour_ago,))
+                LIMIT 10
+            ''')
             
-            rows = c.fetchall()
-            activations = []
-            
-            for row in rows:
-                activations.append({
-                    'sensor_id': row[0],
-                    'nombre_fantasia': row[1],
-                    'timestamp': row[2],
-                    'completed': bool(row[3])
-                })
+            activations = [{
+                'sensor_id': row[0],
+                'sensor_numero': row[1],
+                'nombre_fantasia': row[2],
+                'producto': os.path.splitext(os.path.basename(row[3]))[0] if row[3] else 'Sin producto',
+                'timestamp': row[4]
+            } for row in c.fetchall()]
             
             return jsonify({
                 'success': True,
@@ -1928,6 +1760,47 @@ def get_recent_activations():
             'error': str(e)
         }), 500
 
+@login_required
+def get_recent_activations():
+    try:
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
+            c = conn.cursor()
+            
+            one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
+            
+            c.execute('''
+                SELECT 
+                    a.sensor_id,
+                    es.nombre_fantasia,
+                    a.timestamp
+                FROM activaciones a
+                LEFT JOIN etiquetas_sensores es ON a.sensor_id = es.gpio_pin
+                WHERE a.timestamp >= ?
+                ORDER BY a.timestamp DESC
+            ''', (one_hour_ago,))
+            
+            rows = c.fetchall()
+            activations = []
+            
+            for row in rows:
+                activations.append({
+                    'sensor_id': row[0],
+                    'nombre_fantasia': row[1],
+                    'timestamp': row[2]
+                })
+            
+            return jsonify({
+                'success': True,
+                'activations': activations
+            })
+            
+    except Exception as e:
+        app.logger.error(f"Error getting recent activations: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+    
 
 @app.route('/api/sensor_activity', methods=['POST'])
 def register_sensor_activity():
@@ -1936,18 +1809,16 @@ def register_sensor_activity():
         active_sensors = data.get('active_sensors', [])
         previous_sensors = data.get('previous_sensors', [])
         
+        # Usar zona horaria santiago_tz consistentemente
         current_time = datetime.now(santiago_tz)
         current_set = set(active_sensors)
         previous_set = set(previous_sensors)
         
-        # Sensores que fueron retirados
-        sensors_removed = previous_set - current_set
-        
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
             
-            # Completar activaciones de sensores retirados
-            for sensor_id in sensors_removed:
+            # Sensores retirados
+            for sensor_id in (previous_set - current_set):
                 c.execute('''
                     SELECT id, start_time 
                     FROM activaciones 
@@ -1957,27 +1828,22 @@ def register_sensor_activity():
                     LIMIT 1
                 ''', (sensor_id,))
                 
-                result = c.fetchone()
-                if result:
+                if result := c.fetchone():
                     activation_id, start_time = result
                     if start_time:
-                        start_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                        start_dt = santiago_tz.localize(datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S'))
                         duration = int((current_time - start_dt).total_seconds() * 1000)
-                    else:
-                        duration = 0
                         
-                    c.execute('''
-                        UPDATE activaciones 
-                        SET end_time = ?, 
-                            duration = ?,
-                            completed = 1 
-                        WHERE id = ?
-                    ''', (current_time.strftime('%Y-%m-%d %H:%M:%S'), duration, activation_id))
-                    app.logger.info(f"✅ Activación completada: Sensor {sensor_id}, Duración {duration}ms")
+                        c.execute('''
+                            UPDATE activaciones 
+                            SET end_time = ?, 
+                                duration = ?,
+                                completed = 1 
+                            WHERE id = ?
+                        ''', (current_time.strftime('%Y-%m-%d %H:%M:%S'), duration, activation_id))
             
-            # Registrar nuevas activaciones
-            sensors_activated = current_set - previous_set
-            for sensor_id in sensors_activated:
+            # Nuevas activaciones
+            for sensor_id in (current_set - previous_set):
                 c.execute('''
                     INSERT INTO activaciones 
                     (sensor_id, timestamp, start_time) 
@@ -1987,15 +1853,14 @@ def register_sensor_activity():
                     current_time.strftime('%Y-%m-%d %H:%M:%S'),
                     current_time.strftime('%Y-%m-%d %H:%M:%S')
                 ))
-                app.logger.info(f"📝 Nueva activación registrada: Sensor {sensor_id}")
             
             conn.commit()
-        
         return jsonify({'success': True})
         
     except Exception as e:
-        app.logger.error(f"❌ Error al registrar activación: {str(e)}")
+        app.logger.error(f"Error al registrar activación: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/public/sensor_status')
 def sensor_status():
@@ -2043,69 +1908,51 @@ def vitrina_status():
     return jsonify(status)
 
 def register_sensor_activity(active_sensors, previous_sensors):
-    conn = None
     try:
         current_time = datetime.now(santiago_tz)
         current_set = set(active_sensors)
         previous_set = set(previous_sensors)
         
-        conn = sqlite3.connect('/home/pi/vitrina/vitrina.db')
-        c = conn.cursor()
-        
-        # Completar activaciones de sensores que ya no están activos
-        sensors_removed = previous_set - current_set
-        for sensor_id in sensors_removed:
-            c.execute('''
-                SELECT id, start_time 
-                FROM activaciones 
-                WHERE sensor_id = ? AND completed = 0 
-                ORDER BY timestamp DESC LIMIT 1
-            ''', (sensor_id,))
+        with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
+            c = conn.cursor()
             
-            result = c.fetchone()
-            if result:
-                activation_id, start_time = result
-                if start_time:
-                    # Convertir start_time a datetime con zona horaria
-                    start_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
-                    start_dt = santiago_tz.localize(start_dt)
-                    duration = int((current_time - start_dt).total_seconds() * 1000)
-                    
-                    c.execute('''
-                        UPDATE activaciones 
-                        SET end_time = ?, 
-                            duration = ?,
-                            completed = 1 
-                        WHERE id = ?
-                    ''', (current_time.strftime('%Y-%m-%d %H:%M:%S'), duration, activation_id))
-                    app.logger.info(f"Activación completada: Sensor {sensor_id}, Duración {duration}ms")
-        
-        # Registrar nuevas activaciones
-        sensors_activated = current_set - previous_set
-        for sensor_id in sensors_activated:
-            c.execute('''
-                INSERT INTO activaciones 
-                (sensor_id, timestamp, start_time) 
-                VALUES (?, ?, ?)
-            ''', (
-                sensor_id, 
-                current_time.strftime('%Y-%m-%d %H:%M:%S'),
-                current_time.strftime('%Y-%m-%d %H:%M:%S')
-            ))
-            app.logger.info(f"Nueva activación registrada: Sensor {sensor_id}")
-        
-        conn.commit()
-        return True
-        
+            # Para completar activaciones
+            for sensor_id in (previous_set - current_set):
+                c.execute('''
+                    SELECT id, start_time FROM activaciones 
+                    WHERE sensor_id = ? AND completed = 0 
+                    ORDER BY timestamp DESC LIMIT 1
+                ''', (sensor_id,))
+                
+                if result := c.fetchone():
+                    activation_id, start_time = result
+                    if start_time:
+                        start_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                        duration = int((current_time - start_dt).total_seconds() * 1000)
+                        end_time = current_time.strftime('%Y-%m-%d %H:%M:%S')
+                        c.execute('''
+                            UPDATE activaciones 
+                            SET end_time = ?, duration = ?, completed = 1 
+                            WHERE id = ?
+                        ''', (end_time, duration, activation_id))
+            
+            # Para nuevas activaciones
+            for sensor_id in (current_set - previous_set):
+                timestamp = current_time.strftime('%Y-%m-%d %H:%M:%S')
+                c.execute('''
+                    INSERT INTO activaciones (sensor_id, timestamp, start_time) 
+                    VALUES (?, ?, ?)
+                ''', (sensor_id, timestamp, timestamp))
+            
+            conn.commit()
+            return True
+            
     except Exception as e:
-        app.logger.error(f"Error al registrar actividad: {str(e)}")
-        if conn:
-            conn.rollback()
+        app.logger.error(f"Error: {str(e)}")
         return False
-        
-    finally:
-        if conn:
-            conn.close()
+
+
+
 
 @app.route('/api/sensor-activation', methods=['POST'])
 def sensor_activation():
