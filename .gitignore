@@ -1,9 +1,9 @@
 *.mp4
 static/videos/*
-myenv
-venv
-__pycache__
-*.pyc
+myenv/
 *.pyo
 *.pyd
-
+venv/
+env/
+*.pyc
+__pycache__/
