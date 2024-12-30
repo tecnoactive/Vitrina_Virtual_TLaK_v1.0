@@ -2178,8 +2178,35 @@ def get_sensor_video(sensor_id):
         return False
 
 
+import threading
+from workers import send_data_to_server
+
+def run_server():
+    try:
+        setup_gpio()
+        init_db()
+        app.run(host='0.0.0.0', port=5000, debug=False)
+    except Exception as e:
+        print(f"Error in Flask thread: {e}")
+
+# Function to start additional tasks
+def run_additional_tasks():
+    try:
+        while True:
+            send_data_to_server()
+            time.sleep(3600)
+    except Exception as e:
+        print(f"Error in additional tasks thread: {e}")
 
 if __name__ == '__main__':
-    setup_gpio()
-    init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Start Flask app in a separate thread
+    flask_thread = threading.Thread(target=run_server, daemon=True)
+    flask_thread.start()
+
+    # Start additional tasks in another thread
+    additional_tasks_thread = threading.Thread(target=run_additional_tasks, daemon=True)
+    additional_tasks_thread.start()
+
+    # Keep the main thread alive
+    flask_thread.join()
+    additional_tasks_thread.join()
