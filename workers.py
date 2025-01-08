@@ -13,7 +13,7 @@ def POST_JSON(url, data):
         headers = {
             'Content-Type': 'application/json'
         }
-
+        print('posting activation data...')
         response = requests.post(url, data=json_data, headers=headers)
         
         if response.status_code == 200:
@@ -27,7 +27,7 @@ def POST_JSON(url, data):
 
 def get_activaciones_recientes():
     try:
-        print(1)
+        print('getting data from db')
         credentials_data = credentials.get_credentials()
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             conn.row_factory = sqlite3.Row
@@ -36,6 +36,7 @@ def get_activaciones_recientes():
             rows = c.fetchall()
             
             result = [dict(row) for row in rows]
+            print('assigning ids')
             for item in result:
                 item['device_id'] = credentials_data["device_id"]
 

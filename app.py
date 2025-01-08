@@ -2207,11 +2207,11 @@ def report_to_server():
         app.logger.error(f"Error al reportar datos: {str(e)}")
         print(f"Error in additional tasks thread: {e}")
 
-from credential_manager import credential_manager as credentials
+#from credential_manager import credential_manager as credentials
 
 if __name__ == '__main__':
 
-    CREDENTIALS = credentials.get_credentials()
+    #CREDENTIALS = credentials.get_credentials() 
 
     flask_thread = threading.Thread(target=run_server, daemon=True)
     flask_thread.start()
