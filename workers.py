@@ -32,7 +32,7 @@ def get_activaciones_recientes():
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            c.execute("SELECT * FROM v_activaciones WHERE timestamp >= DATETIME('now', '-12 minute', 'localtime')") # cambiar a -1 hour
+            c.execute("SELECT * FROM v_activaciones WHERE timestamp >= DATETIME('now', '-12 minute', 'localtime') AND completed = 1") # cambiar a -1 hour
             rows = c.fetchall()
             
             result = [dict(row) for row in rows]
