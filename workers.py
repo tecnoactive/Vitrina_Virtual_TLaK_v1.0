@@ -32,7 +32,7 @@ def get_activaciones_recientes():
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            c.execute("SELECT * FROM v_activaciones WHERE timestamp >= DATETIME('now', '-10 minute', 'localtime')") # cambiar a -1 hour
+            c.execute("SELECT * FROM v_activaciones WHERE timestamp >= DATETIME('now', '-12 minute', 'localtime')") # cambiar a -1 hour
             rows = c.fetchall()
             
             result = [dict(row) for row in rows]
@@ -40,8 +40,8 @@ def get_activaciones_recientes():
             for item in result:
                 item['device_id'] = credentials_data["device_id"]
 
-            #with open(os.path.join(os.path.dirname(__file__), 'result.json'), 'w') as f:
-            #    json.dump(result, f, indent=4)
+            with open(os.path.join(os.path.dirname(__file__), 'result.json'), 'w') as f:
+                json.dump(result, f, indent=4)
 
             return result
 
@@ -51,8 +51,8 @@ def get_activaciones_recientes():
 def send_data_to_server():
     activaciones_recientes = get_activaciones_recientes()
     status, response_body = POST_JSON("https://clientes.tecnoactive.cl/liftandlearn2/api.php?action=report_activations", activaciones_recientes)
-    #with open(os.path.join(os.path.dirname(__file__), 'response.json'), 'w') as f:
-    #    json.dump(response_body, f, indent=4)
+    with open(os.path.join(os.path.dirname(__file__), 'response.json'), 'w') as f:
+        json.dump(response_body, f, indent=4)
 
     if status == 200:
         print("OK, Server response:", response_body)
