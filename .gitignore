@@ -9,3 +9,6 @@ env/
 *.pyc
 __pycache__/
 *.db
+cms/*
+response.json
+result.json

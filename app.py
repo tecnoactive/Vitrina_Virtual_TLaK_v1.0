@@ -2187,6 +2187,7 @@ def servir_json():
 
 import threading
 from workers import send_data_to_server
+from cms import get_media
 
 def run_server():
     try:
@@ -2207,7 +2208,14 @@ def report_to_server():
         app.logger.error(f"Error al reportar datos: {str(e)}")
         print(f"Error in additional tasks thread: {e}")
 
-#from credential_manager import credential_manager as credentials
+def sync_cms():
+    try:
+        while True:
+            get_media()
+            time.sleep(600)
+    except Exception as e:
+        app.logger.error(f"Error descargar media: {str(e)}")
+        print(f"Error descargar media: {e}")
 
 if __name__ == '__main__':
 
@@ -2219,5 +2227,9 @@ if __name__ == '__main__':
     additional_tasks_thread = threading.Thread(target=report_to_server, daemon=True)
     additional_tasks_thread.start()
 
+    sync_cms_thread = threading.Thread(target=sync_cms, daemon=True)
+    sync_cms_thread.start()
+
     flask_thread.join()
     additional_tasks_thread.join()
+    sync_cms_thread.join()
