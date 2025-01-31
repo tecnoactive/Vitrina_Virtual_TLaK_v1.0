@@ -22,6 +22,7 @@ logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 app.secret_key = 'admin'
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 
 santiago_tz = pytz.timezone('America/Santiago')
 
@@ -1185,7 +1186,7 @@ def get_all_sensor_videos():
         return jsonify(videos)
 
 @app.route('/api/upload_video', methods=['POST'])
-@login_required
+# @login_required   
 def upload_video():
     try:
         if 'video' not in request.files:
