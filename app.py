@@ -1121,12 +1121,11 @@ def obtener_etiquetas_sensores():
         return jsonify(etiquetas)
 
 @app.route('/api/actualizar-etiqueta', methods=['POST'])
-@login_required
+# @login_required
 def actualizar_etiqueta_sensor():
     datos = request.json
     gpio_pin = datos.get('gpio_pin')
     nombre_fantasia = datos.get('nombre_fantasia')
-    
     if not gpio_pin:
         return jsonify({'error': 'Falta el número de GPIO'}), 400
         

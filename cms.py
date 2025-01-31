@@ -32,9 +32,6 @@ def assign_cms_media(video_path: str, sensor_id: int):
     :param sensor_id: The sensor ID associated with the video.
     :return: The JSON response from the server.
     """
-    print('** assign cms media')
-    print(video_path)
-    print(sensor_id)
     
     api_url = "http://localhost:5000/api/upload_video"  # Update with the correct endpoint
     
@@ -49,6 +46,33 @@ def assign_cms_media(video_path: str, sensor_id: int):
             response.raise_for_status()  # Raise an error for non-200 responses
             print(response.json())
             return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+        return {'error': f'HTTP request failed: {str(e)}'}
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return {'error': f'Unexpected error: {str(e)}'}
+
+def assign_label(sensor_id: int, label: str):
+    """
+    Assigns a label to the given sensor.
+
+    :param sensor_id: The sensor ID to assign the label to.
+    :param label: The label to assign to the sensor.
+    :return: The JSON response from the server.
+    """
+    print('assign_label')
+    api_url = "http://localhost:5000/api/actualizar-etiqueta"  # Update with the correct endpoint
+    
+    try:
+        headers = {'Content-Type': 'application/json'}
+        data = {'gpio_pin': sensor_id, 'nombre_fantasia': label}
+
+        #print(f"** Assigning label '{label}' to sensor {sensor_id} at {api_url}")
+        response = requests.post(api_url, json=data, headers=headers)  # Use `json=data`
+
+        response.raise_for_status()  # Raise an error for non-200 responses
+        return response.json()
     except requests.exceptions.RequestException as e:
         print(f"HTTP Request failed: {e}")
         return {'error': f'HTTP request failed: {str(e)}'}
@@ -74,7 +98,6 @@ def download_file(url, dest_path):
 
 def process_url(url):
     try:
-        print('** process_url '+url)
         pantalla_id = url.split("=")[-1]
         pantalla_folder = os.path.join(base_folder, pantalla_id)
         os.makedirs(pantalla_folder, exist_ok=True)
@@ -84,10 +107,9 @@ def process_url(url):
         data = response.json()
 
         expected_files = []
-        print('** process_url 2')
         playlist = data.get("Playlist", [])
+        playlist_name = playlist[0]['descripcion']
         for item in playlist:
-            print('** process_url 3 (for)')
             items = item.get("Item", [])
             for content in items:
                 content_url = urljoin("https://clientes.tecnoactive.cl/cms_content/", content["url"])
@@ -95,12 +117,10 @@ def process_url(url):
                 expected_files.append(dest_path)
                 print('>> process_url 4')
                 if not os.path.exists(dest_path):
-                    print('>> process_url 5')
                     download_file(content_url, dest_path)
-                    print(" >> process_url 6: Sensor number")
                     sensor_number = int(pantalla_id.split('_')[-1]) 
-                    print(sensor_number)
                     assign_cms_media(dest_path, get_gpio(sensor_number))
+                    assign_label(get_gpio(sensor_number), playlist_name)
 
         existing_files = [os.path.join(pantalla_folder, f) for f in os.listdir(pantalla_folder)]
         for file in existing_files:
