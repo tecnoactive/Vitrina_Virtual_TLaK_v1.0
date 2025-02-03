@@ -985,7 +985,7 @@ def remove_sensor_video(sensor_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/upload_background', methods=['POST'])
-@login_required
+#@login_required
 def upload_background_video():
     if 'video' not in request.files:
         return jsonify({'error': 'No se encontró archivo de video'}), 400
@@ -1008,17 +1008,17 @@ def upload_background_video():
             # Insertar el nuevo video
             c.execute('INSERT INTO background_videos (video_path, orden) VALUES (?, ?)',
                      (os.path.join('videos', filename), max_orden + 1))
+            inserted_id = c.lastrowid 
             conn.commit()
-            
-        return jsonify({'success': True})
+
+        return jsonify({'success': True, 'id': inserted_id})
     except Exception as e:
         app.logger.error(f"Error subiendo video de fondo: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
     
-    
 @app.route('/api/remove_background/<int:video_id>', methods=['DELETE'])
-@login_required
+#@login_required
 def remove_background_video(video_id):
     try:
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
@@ -1463,7 +1463,7 @@ def get_public_background_videos():
         return jsonify(videos)
 
 @app.route('/api/move_background', methods=['POST'])
-@login_required
+#@login_required
 def move_background_video():
     try:
         data = request.json
