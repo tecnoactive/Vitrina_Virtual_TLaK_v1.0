@@ -34,7 +34,7 @@ def create_credentials():
     }
 
 def get_credentials():
-    filename = 'credentials.json'
+    filename = '/home/pi/vitrina/credentials.json'
 
     if not os.path.exists(filename):
         estructura_inicial = create_credentials()
@@ -60,4 +60,7 @@ def get_credentials():
             json.dump(data, file)
 
         return data
+
+if __name__ == '__main__':
+    print(get_credentials())
 
