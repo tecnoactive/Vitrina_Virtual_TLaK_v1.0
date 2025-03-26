@@ -11,4 +11,5 @@ __pycache__/
 *.db
 cms/*
 response.json
-result.json
+result.json.log
+static/videos/

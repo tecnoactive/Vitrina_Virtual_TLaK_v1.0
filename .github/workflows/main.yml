@@ -1,0 +1,32 @@
+name: Deploy PHP App to FTP Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Generate deploy.json
+      run: |
+        echo '{' > deploy.json
+        echo '  "commit_id": "${{ github.sha }}",' >> deploy.json
+        echo '  "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"' >> deploy.json
+        echo '}' >> deploy.json
+        cat deploy.json  # Muestra el contenido en la consola (opcional)
+
+    - name: Deploy to FTP server
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      with:
+        server: clientes.tecnoactive.cl
+        username: ${{ secrets.FTPUSERNAME }}
+        password: ${{ secrets.FTPPASSWORD }}
+        protocol: ftps
+        server-dir: public_html/liftandlearn-app/
+        local-dir: ./
