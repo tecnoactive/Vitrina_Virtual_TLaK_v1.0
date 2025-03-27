@@ -3,7 +3,7 @@
 # 0 * * * * /home/pi/vitrina/update.sh >> /home/pi/vitrina/update.log 2>&1
 
 echo "" >> /home/pi/vitrina/update.log
-echo " ~ Lift And Learn Updater ~ " >> /home/pi/vitrina/update.log
+echo " ~~~~~~~~ Lift And Learn Updater ~~~~~~~~ " >> /home/pi/vitrina/update.log
 date >> /home/pi/vitrina/update.log
 echo "Comprobando cambios en el servidor..."
 
@@ -52,6 +52,11 @@ else
 
     if [ "$LOCAL_COMMIT" == "$REMOTE_COMMIT" ]; then
         echo "El software ya se encuentra en su versión más reciente."
+        echo "  > Commit local: $LOCAL_COMMIT"
+        echo "  > Commit remoto: $REMOTE_COMMIT"
+        echo "  > Mensaje remoto: $REMOTE_MESSAGE"
+        echo "  > Fecha del commit remoto: $REMOTE_DATE"
+        echo " ** No se requiere actualización. **"
         rm "$LOCAL_DIR/$DEPLOY_FILE.new"
         exit 0
     fi
