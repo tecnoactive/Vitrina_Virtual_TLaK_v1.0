@@ -21,8 +21,8 @@ jobs:
 
         echo '{' > deploy.json
         echo '  "commit": "'$COMMIT_ID'",' >> deploy.json
-        echo '  "message": '$COMMIT_MESSAGE >> deploy.json
-        echo '  "date": "'$TIMESTAMP'",' >> deploy.json
+        echo '  "message": "'$COMMIT_MESSAGE'"," >> deploy.json
+        echo '  "date": "'$TIMESTAMP'" >> deploy.json
         echo '}' >> deploy.json
 
         cat deploy.json  # Muestra el contenido en la consola
