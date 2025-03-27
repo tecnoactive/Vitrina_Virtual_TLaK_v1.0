@@ -15,11 +15,17 @@ jobs:
 
     - name: Generate deploy.json
       run: |
+        COMMIT_ID="${{ github.sha }}"
+        TIMESTAMP="$(git log -1 --pretty=%cI)"  
+        COMMIT_MESSAGE="$(git log -1 --pretty=%s | jq -Rs .)"  # Escapa el mensaje correctamente para JSON
+
         echo '{' > deploy.json
-        echo '  "commit_id": "${{ github.sha }}",' >> deploy.json
-        echo '  "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"' >> deploy.json
+        echo '  "commit": "'$COMMIT_ID'",' >> deploy.json
+        echo '  "message": '$COMMIT_MESSAGE >> deploy.json
+        echo '  "date": "'$TIMESTAMP'",' >> deploy.json
         echo '}' >> deploy.json
-        cat deploy.json  # Muestra el contenido en la consola (opcional)
+
+        cat deploy.json  # Muestra el contenido en la consola
 
     - name: Deploy to FTP server
       uses: SamKirkland/FTP-Deploy-Action@v4.3.5

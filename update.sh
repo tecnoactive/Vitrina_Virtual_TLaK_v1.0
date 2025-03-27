@@ -11,7 +11,11 @@ echo "Comprobando cambios en el servidor..."
 SERVER_URL="https://clientes.tecnoactive.cl/liftandlearn-app"
 LOCAL_DIR="/home/pi/vitrina"
 DEPLOY_FILE="deploy.json"
+TMP_DIR="/tmp/deploy_tmp"
 REBOOT_REQUIRED=false
+
+# Crear directorio temporal
+mkdir -p "$TMP_DIR"
 
 # Descargar deploy.json del servidor
 wget -q -O "$LOCAL_DIR/$DEPLOY_FILE.new" "$SERVER_URL/$DEPLOY_FILE"
@@ -25,7 +29,17 @@ fi
 # Si no existe deploy.json, es la primera ejecución: descargar todo
 if [ ! -f "$LOCAL_DIR/$DEPLOY_FILE" ]; then
     echo "Primera ejecución. Descargando todos los archivos..."
-    rsync -avz --ignore-existing --update "$SERVER_URL/" "$LOCAL_DIR/"
+    
+    # Descargar todos los archivos al directorio temporal
+    wget -q --mirror --no-parent --convert-links --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
+
+    # Sincronizar los archivos descargados con la carpeta local
+    rsync -avz --update "$TMP_DIR/" "$LOCAL_DIR/"
+
+    # Limpiar archivos temporales
+    rm -rf "$TMP_DIR"
+
+    # Mover deploy.json
     mv "$LOCAL_DIR/$DEPLOY_FILE.new" "$LOCAL_DIR/$DEPLOY_FILE"
     echo "Instalación inicial completa."
     REBOOT_REQUIRED=true
@@ -47,9 +61,19 @@ else
     echo "  > Commit local: $LOCAL_COMMIT"
     echo "  > Commit remoto: $REMOTE_COMMIT"
     echo "  > Mensaje remoto: $REMOTE_MESSAGE"
-    echo "  > date remoto: $REMOTE_DATE"
+    echo "  > Fecha del commit remoto: $REMOTE_DATE"
     echo "Iniciando sincronización de archivos..."
-    rsync -avz --ignore-existing --update "$SERVER_URL/" "$LOCAL_DIR/"
+
+    # Descargar archivos actualizados al directorio temporal
+    wget -q --mirror --no-parent --convert-links --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
+
+    # Sincronizar solo archivos nuevos o modificados
+    rsync -avz --update "$TMP_DIR/" "$LOCAL_DIR/"
+
+    # Limpiar archivos temporales
+    rm -rf "$TMP_DIR"
+
+    # Mover deploy.json
     mv "$LOCAL_DIR/$DEPLOY_FILE.new" "$LOCAL_DIR/$DEPLOY_FILE"
     REBOOT_REQUIRED=true
     echo "Actualización completa."
