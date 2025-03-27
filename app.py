@@ -2203,7 +2203,7 @@ def report_to_server():
         while True:
             resp = send_data_to_server()
             app.logger.error(str(resp))
-            time.sleep(600) # cambiar a 1 hora (3600)
+            time.sleep(600) # 10 minutos
     except Exception as e:
         app.logger.error(f"Error al reportar datos: {str(e)}")
         print(f"Error in additional tasks thread: {e}")
