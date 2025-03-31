@@ -2218,9 +2218,10 @@ def sync_cms():
         print(f"Error descargar media: {e}")
 
 if __name__ == '__main__':
- 
+
     from credential_manager import credential_manager
-    CREDENTIALS = credential_manager.get_credentials() 
+    credential_manager.clear_credentials()
+    CREDENTIALS = credential_manager.get_credentials()
     print(CREDENTIALS)
 
     flask_thread = threading.Thread(target=run_server, daemon=True)
