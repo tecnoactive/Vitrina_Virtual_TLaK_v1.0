@@ -81,7 +81,7 @@ else
     mv "$LOCAL_DIR/$DEPLOY_FILE.new" "$LOCAL_DIR/$DEPLOY_FILE"
 
     # Hacer que el script sea ejecutable
-    chmod +x "$LOCAL_DIR/update.sh"
+    chmod 777 "$LOCAL_DIR/update.sh"
 
     REBOOT_REQUIRED=true
     echo "Actualización completa."
