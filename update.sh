@@ -34,8 +34,8 @@ if [ ! -f "$LOCAL_DIR/$DEPLOY_FILE" ]; then
     # Descargar todos los archivos sin crear la carpeta del dominio
     wget -q -r -np -nH --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
 
-    # Sincronizar los archivos descargados con la carpeta local
-    rsync -avz --update --delete "$TMP_DIR/" "$LOCAL_DIR"
+    # Sincronizar los archivos descargados con la carpeta local sin tocar `venv`
+    rsync -avz --update --delete --exclude='venv/' "$TMP_DIR/" "$LOCAL_DIR"
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"
@@ -73,8 +73,8 @@ else
     # Descargar archivos actualizados sin crear la carpeta del dominio
     wget -q -r -np -nH --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
 
-    # Sincronizar solo archivos nuevos o modificados
-    rsync -avz --update --delete "$TMP_DIR/" "$LOCAL_DIR"
+    # Sincronizar solo archivos nuevos o modificados sin tocar `venv`
+    rsync -avz --update --delete --exclude='venv/' "$TMP_DIR/" "$LOCAL_DIR"
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"
