@@ -2217,11 +2217,11 @@ def sync_cms():
         app.logger.error(f"Error descargar media: {str(e)}")
         print(f"Error descargar media: {e}")
 
-from credential_manager import credential_manager
-credential_manager.clear_credentials()
+#credential_manager.clear_credentials()
 
 if __name__ == '__main__':
 
+    from credential_manager import credential_manager
     CREDENTIALS = credential_manager.get_credentials()
     print("Credenciales:")
     print(CREDENTIALS)
