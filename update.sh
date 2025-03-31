@@ -4,7 +4,7 @@
 
 echo "" >> /home/pi/vitrina/update.log
 echo " ~~~~~~~~ Lift And Learn Updater ~~~~~~~~ " >> /home/pi/vitrina/update.log
-date >> /home/pi/vitrina/update.log
+echo "       "$(date) >> /home/pi/vitrina/update.log
 echo "Comprobando cambios en el servidor..."
 
 # Configuración
