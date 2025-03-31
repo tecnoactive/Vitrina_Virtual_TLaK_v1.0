@@ -31,10 +31,10 @@ if [ ! -f "$LOCAL_DIR/$DEPLOY_FILE" ]; then
     echo "Primera ejecución. Descargando todos los archivos..."
     
     # Descargar todos los archivos al directorio temporal
-    wget -q --mirror --no-parent --convert-links --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
+    wget -q --mirror --no-parent --convert-links --cut-dirs=2 -P "$TMP_DIR" "$SERVER_URL/"
 
     # Sincronizar los archivos descargados con la carpeta local
-    rsync -avz --update "$TMP_DIR/" "$LOCAL_DIR/"
+    rsync -avz --update --delete "$TMP_DIR/" "$LOCAL_DIR/"
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"

@@ -61,6 +61,18 @@ def get_credentials():
 
         return data
 
+def clear_credentials():
+    filename = '/home/pi/vitrina/credentials.json'
+    if os.path.exists(filename):
+        try:
+            os.remove(filename)
+        except OSError as e:
+            print(f" ~~~ Error deleting file: {e}")
+            return False
+        return True
+    else:
+        return False
+
 if __name__ == '__main__':
     print(get_credentials())
 
