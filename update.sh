@@ -14,7 +14,8 @@ DEPLOY_FILE="deploy.json"
 TMP_DIR="/tmp/deploy_tmp"
 REBOOT_REQUIRED=false
 
-# Crear directorio temporal
+# Crear directorio temporal limpio
+rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 
 # Descargar deploy.json del servidor
@@ -29,12 +30,12 @@ fi
 # Si no existe deploy.json, es la primera ejecución: descargar todo
 if [ ! -f "$LOCAL_DIR/$DEPLOY_FILE" ]; then
     echo "Primera ejecución. Descargando todos los archivos..."
-    
-    # Descargar todos los archivos al directorio temporal
-    wget -q --mirror --no-parent --convert-links --cut-dirs=2 -P "$TMP_DIR" "$SERVER_URL/"
+
+    # Descargar todos los archivos sin crear la carpeta del dominio
+    wget -q -r -np -nH --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
 
     # Sincronizar los archivos descargados con la carpeta local
-    rsync -avz --update --delete "$TMP_DIR/" "$LOCAL_DIR/"
+    rsync -avz --update --delete "$TMP_DIR/" "$LOCAL_DIR"
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"
@@ -69,11 +70,11 @@ else
     echo "  > Fecha del commit remoto: $REMOTE_DATE"
     echo "Iniciando sincronización de archivos..."
 
-    # Descargar archivos actualizados al directorio temporal
-    wget -q --mirror --no-parent --convert-links --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
+    # Descargar archivos actualizados sin crear la carpeta del dominio
+    wget -q -r -np -nH --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
 
     # Sincronizar solo archivos nuevos o modificados
-    rsync -avz --update "$TMP_DIR/" "$LOCAL_DIR/"
+    rsync -avz --update --delete "$TMP_DIR/" "$LOCAL_DIR"
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"
