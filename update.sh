@@ -34,17 +34,16 @@ if [ ! -f "$LOCAL_DIR/$DEPLOY_FILE" ]; then
     # Descargar todos los archivos sin crear la carpeta del dominio
     wget -q -r -np -nH --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
 
-    # Sincronizar los archivos descargados con la carpeta local sin tocar `venv` ni `vitrina.db`
-    rsync -avz --update --delete --exclude='venv/' --exclude='vitrina.db' "$TMP_DIR/" "$LOCAL_DIR"
+    # Sincronizar los archivos descargados sin tocar `venv` ni `vitrina.db`
+    echo "Archivos sincronizados:"
+    rsync -avz --update --delete --exclude='venv/' --exclude='vitrina.db' "$TMP_DIR/" "$LOCAL_DIR" | grep -E '^(sending|deleting|[^ ]+/$)'
+
+    chmod +x "$LOCAL_DIR/update.sh"
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"
-
     # Mover deploy.json
     mv "$LOCAL_DIR/$DEPLOY_FILE.new" "$LOCAL_DIR/$DEPLOY_FILE"
-
-    # Hacer que el script sea ejecutable
-    chmod +x "$LOCAL_DIR/update.sh"
 
     echo "Instalación inicial completa."
     REBOOT_REQUIRED=true
@@ -57,10 +56,6 @@ else
 
     if [ "$LOCAL_COMMIT" == "$REMOTE_COMMIT" ]; then
         echo "El software ya se encuentra en su versión más reciente."
-        echo "  > Commit local: $LOCAL_COMMIT"
-        echo "  > Commit remoto: $REMOTE_COMMIT"
-        echo "  > Mensaje remoto: $REMOTE_MESSAGE"
-        echo "  > Fecha del commit remoto: $REMOTE_DATE"
         echo " ** No se requiere actualización. **"
         rm "$LOCAL_DIR/$DEPLOY_FILE.new"
         exit 0
@@ -68,17 +63,16 @@ else
 
     # Si hay cambios, actualizar archivos
     echo "Cambios detectados. Descargando actualización..."
-    echo "  > Commit local: $LOCAL_COMMIT"
     echo "  > Commit remoto: $REMOTE_COMMIT"
     echo "  > Mensaje remoto: $REMOTE_MESSAGE"
     echo "  > Fecha del commit remoto: $REMOTE_DATE"
-    echo "Iniciando sincronización de archivos..."
+    echo "Archivos sincronizados:"
 
     # Descargar archivos actualizados sin crear la carpeta del dominio
     wget -q -r -np -nH --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
 
     # Sincronizar solo archivos nuevos o modificados sin tocar `venv` ni `vitrina.db`
-    rsync -avz --update --delete --exclude='venv/' --exclude='vitrina.db' "$TMP_DIR/" "$LOCAL_DIR"
+    rsync -avz --update --delete --exclude='venv/' --exclude='vitrina.db' "$TMP_DIR/" "$LOCAL_DIR" | grep -E '^(sending|deleting|[^ ]+/$)'
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"
