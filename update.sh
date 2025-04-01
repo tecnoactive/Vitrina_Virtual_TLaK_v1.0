@@ -80,8 +80,12 @@ else
 
     echo "Cambiando permisos de archivos..."
     # Hacer que el script sea ejecutable
-    chmod +x "$LOCAL_DIR/*.sh"
-    chmod +x "$LOCAL_DIR/*.py"
+    chmod +x "$LOCAL_DIR/update.sh"
+    chmod +x "$LOCAL_DIR/launcher.sh"
+    chmod +x "$LOCAL_DIR/start_app.sh"
+    chmod +x "$LOCAL_DIR/start_vitrina.sh"
+    chmod +x "$LOCAL_DIR/start_kiosk.sh"
+    chmod +x "$LOCAL_DIR/app.py"
 
     REBOOT_REQUIRED=true
     echo "Actualización completa."
