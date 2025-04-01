@@ -36,30 +36,26 @@ def create_credentials():
 def get_credentials():
     filename = '/home/pi/vitrina/credentials.json'
 
-    if not os.path.exists(filename):
+    if not os.path.exists(filename) or os.stat(filename).st_size == 0:
         estructura_inicial = create_credentials()
         with open(filename, 'w') as file:
             json.dump(estructura_inicial, file)
+        os.chmod(filename, 0o777)  # 🔹 Establecer permisos 777
         return estructura_inicial
-    else:
-        if os.stat(filename).st_size == 0:
-            estructura_inicial = create_credentials()
-            with open(filename, 'w') as file:
-                json.dump(estructura_inicial, file)
-            return estructura_inicial
 
-        with open(filename, 'r') as file:
-            data = json.load(file)
+    with open(filename, 'r') as file:
+        data = json.load(file)
 
-        if "device_mac" not in data or not data["device_mac"]:
-            data["device_mac"] = get_mac()
-        if "device_id" not in data or not data["device_id"] or not validate_device_id(data["device_id"]):
-            data["device_id"] = request_id(data["device_mac"])
+    if "device_mac" not in data or not data["device_mac"]:
+        data["device_mac"] = get_mac()
+    if "device_id" not in data or not data["device_id"] or not validate_device_id(data["device_id"]):
+        data["device_id"] = request_id(data["device_mac"])
 
-        with open(filename, 'w') as file:
-            json.dump(data, file)
+    with open(filename, 'w') as file:
+        json.dump(data, file)
 
-        return data
+    os.chmod(filename, 0o777)  # 🔹 Establecer permisos 777 después de modificar
+    return data
 
 def clear_credentials():
     filename = '/home/pi/vitrina/credentials.json'

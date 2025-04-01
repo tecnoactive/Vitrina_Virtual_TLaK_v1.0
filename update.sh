@@ -78,8 +78,8 @@ else
     # Mover deploy.json
     mv "$LOCAL_DIR/$DEPLOY_FILE.new" "$LOCAL_DIR/$DEPLOY_FILE"
 
-    echo "Cambiando permisos de archivos..."
     # Hacer que el script sea ejecutable
+    echo "Cambiando permisos de archivos..."
     chmod +x "$LOCAL_DIR/update.sh"
     chmod +x "$LOCAL_DIR/launcher.sh"
     chmod +x "$LOCAL_DIR/start_app.sh"
