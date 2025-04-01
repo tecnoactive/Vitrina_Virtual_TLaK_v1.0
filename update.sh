@@ -81,7 +81,8 @@ else
     mv "$LOCAL_DIR/$DEPLOY_FILE.new" "$LOCAL_DIR/$DEPLOY_FILE"
 
     # Hacer que el script sea ejecutable
-    chmod 777 "$LOCAL_DIR/update.sh"
+    chmod +x "$LOCAL_DIR/update.sh"
+    chmod +x "$LOCAL_DIR/*.py"
 
     REBOOT_REQUIRED=true
     echo "Actualización completa."
