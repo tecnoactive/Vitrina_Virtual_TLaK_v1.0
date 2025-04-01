@@ -70,7 +70,7 @@ else
     wget -q -r -np -nH --cut-dirs=1 -P "$TMP_DIR" "$SERVER_URL/"
 
     # Sincronizar solo archivos nuevos o modificados sin tocar `venv` ni `vitrina.db`
-    rsync -avz --update --delete --exclude='venv/' --exclude='vitrina.db' "$TMP_DIR/" "$LOCAL_DIR" | grep -E '^(sending|deleting|[^ ]+/$)'
+    rsync -avz --update --delete --exclude='venv/' --exclude='cms/' --exclude='vitrina.db' "$TMP_DIR/" "$LOCAL_DIR" | grep -E '^(sending|deleting|[^ ]+/$)'
 
     # Limpiar archivos temporales
     rm -rf "$TMP_DIR"
