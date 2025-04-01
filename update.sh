@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # 0 * * * * /home/pi/vitrina/update.sh >> /home/pi/vitrina/update.log 2>&1
 
 echo "" >> /home/pi/vitrina/update.log
@@ -7,7 +6,6 @@ echo " ~~~~~~~~ Lift And Learn Updater ~~~~~~~~ " >> /home/pi/vitrina/update.log
 date >> /home/pi/vitrina/update.log
 echo "Comprobando cambios en el servidor..."
 
-# Configuración
 SERVER_URL="https://clientes.tecnoactive.cl/liftandlearn-app"
 LOCAL_DIR="/home/pi/vitrina"
 DEPLOY_FILE="deploy.json"
@@ -80,6 +78,7 @@ else
     # Mover deploy.json
     mv "$LOCAL_DIR/$DEPLOY_FILE.new" "$LOCAL_DIR/$DEPLOY_FILE"
 
+    echo "Cambiando permisos de archivos..."
     # Hacer que el script sea ejecutable
     chmod +x "$LOCAL_DIR/*.sh"
     chmod +x "$LOCAL_DIR/*.py"
