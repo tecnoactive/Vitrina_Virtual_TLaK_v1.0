@@ -9,7 +9,7 @@ base_folder = "cms"
 os.makedirs(base_folder, exist_ok=True)
 
 # archivo .log para guardar los errores
-log_file = os.path.join(base_folder, "cms_sync.log")
+log_file = os.path.join("cms_sync.log")
 
 def log_data(message):
     """
@@ -64,11 +64,12 @@ def assign_cms_media(video_path: str, sensor_id: int):
             data = {'sensor_id': sensor_id}
 
             print(f"** Sending file {video_path.split('/')[1]} for sensor {sensor_id} to {api_url}")
+            log_data(f"** Sending file {video_path.split('/')[1]} for sensor {sensor_id} to {api_url}")
             response = requests.post(base_url + api_url, files=files, data=data)
 
             response.raise_for_status()  # Raise an error for non-200 responses
             print(response.json())
-            log_data(f"Response: {response.json()}")
+            log_data(f"Response: {str(response.json())}")
             return response.json()
     except requests.exceptions.RequestException as e:
         print(f"HTTP Request failed: {e}")
@@ -180,8 +181,10 @@ def process_url(url):
                     sensor_number = int(pantalla_id.split('_')[-1]) if '_' in pantalla_id else 0
                     resp = assign_cms_media(dest_path, get_gpio(sensor_number))
                     if sensor_number == 0: # es un background o un video ?
+                        log_data(f"Background ID: {resp['id']}")
                         move_new_background(resp["id"], "up")
                     else:
+                        log_data(f"Video ID: {resp['id']}")
                         assign_label(get_gpio(sensor_number), playlist_name)
 
         existing_files = [os.path.join(pantalla_folder, f) for f in os.listdir(pantalla_folder)]

@@ -988,16 +988,19 @@ def remove_sensor_video(sensor_id):
 #@login_required
 def upload_background_video():
     if 'video' not in request.files:
+        print("No se encontró archivo de video")
         return jsonify({'error': 'No se encontró archivo de video'}), 400
     
     file = request.files['video']
     if file.filename == '':
+        print("No se seleccionó ningún archivo")
         return jsonify({'error': 'No se seleccionó ningún archivo'}), 400
 
     try:
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
+        print(f"Archivo guardado en: {filepath}")
         
         with sqlite3.connect('/home/pi/vitrina/vitrina.db') as conn:
             c = conn.cursor()
