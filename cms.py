@@ -43,7 +43,7 @@ def get_gpio(sensor_value):
     for sensor in sensors:
         if sensor["sensor"] == sensor_value:
             return sensor["gpio"]
-    return None 
+    return 0
 
 def assign_cms_media(video_path: str, sensor_id: int):
     """
@@ -53,8 +53,10 @@ def assign_cms_media(video_path: str, sensor_id: int):
     :param sensor_id: The sensor ID associated with the video.
     :return: The JSON response from the server.
     """
+    log_data(f"assign_cms_media {video_path} {sensor_id}")
     base_url = 'http://localhost:5000/api/'
-    api_url = "upload_video" if '_' in video_path.split('/')[1] else "upload_background"
+    #api_url = "upload_video" if '_' in video_path.split('/')[1] else "upload_background"
+    api_url = "upload_video" if sensor_id > 0 else "upload_background"
     
     try:
         with open(video_path, 'rb') as video_file:
@@ -177,7 +179,7 @@ def process_url(url):
                     download_file(content_url, dest_path)
                     sensor_number = int(pantalla_id.split('_')[-1]) if '_' in pantalla_id else 0
                     resp = assign_cms_media(dest_path, get_gpio(sensor_number))
-                    if "id" in resp: # es un background o un video ?
+                    if sensor_number == 0: # es un background o un video ?
                         move_new_background(resp["id"], "up")
                     else:
                         assign_label(get_gpio(sensor_number), playlist_name)
