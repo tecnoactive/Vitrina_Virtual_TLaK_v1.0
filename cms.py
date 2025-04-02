@@ -66,6 +66,7 @@ def assign_cms_media(video_path: str, sensor_id: int):
 
             response.raise_for_status()  # Raise an error for non-200 responses
             print(response.json())
+            log_data(f"Response: {response.json()}")
             return response.json()
     except requests.exceptions.RequestException as e:
         print(f"HTTP Request failed: {e}")
@@ -194,7 +195,7 @@ def process_url(url):
 def get_media():
     print('** get media')
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_data(f"********* get media ({fecha}) *********")
+    log_data(f"\n********* get media ({fecha}) *********")
     CREDENTIALS = credentials.get_credentials()
     log_data(f"Credentials: {str(CREDENTIALS)}")
     sensors_ids = generate_sensors_id(CREDENTIALS['device_id'])
