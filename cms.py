@@ -168,7 +168,7 @@ def process_url(url):
             for content in items:
                 content_url = urljoin("https://clientes.tecnoactive.cl/cms_content/", content["url"])
                 #dest_path = os.path.join(pantalla_folder, os.path.basename(content["url"]))
-                dest_path = os.path.join(base_folder, "static/videos", os.path.basename(content["url"]))
+                dest_path = os.path.join("static/videos", os.path.basename(content["url"]))
                 print(f"** {content_url} -> {dest_path}")
                 log_data(f"** {content_url} -> {dest_path}")
                 expected_files.append(dest_path)

@@ -2212,7 +2212,7 @@ def sync_cms():
     try:
         while True:
             get_media()
-            time.sleep(600)
+            time.sleep(60)
     except Exception as e:
         app.logger.error(f"Error descargar media: {str(e)}")
         print(f"Error descargar media: {e}")
