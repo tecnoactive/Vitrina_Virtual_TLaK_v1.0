@@ -167,7 +167,10 @@ def process_url(url):
             items = item.get("Item", [])
             for content in items:
                 content_url = urljoin("https://clientes.tecnoactive.cl/cms_content/", content["url"])
-                dest_path = os.path.join(pantalla_folder, os.path.basename(content["url"]))
+                #dest_path = os.path.join(pantalla_folder, os.path.basename(content["url"]))
+                dest_path = os.path.join(base_folder, "static/videos", os.path.basename(content["url"]))
+                print(f"** {content_url} -> {dest_path}")
+                log_data(f"** {content_url} -> {dest_path}")
                 expected_files.append(dest_path)
                 if not os.path.exists(dest_path):
                     download_file(content_url, dest_path)
@@ -199,3 +202,7 @@ def get_media():
         url = CMS_JSON_URL + sensor_id
         print('** get media '+url)
         process_url(url)
+
+if __name__ == "__main__":
+    # Ejecutar la función principal
+    get_media()
