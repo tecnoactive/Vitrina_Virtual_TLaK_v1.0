@@ -2,10 +2,31 @@ import os
 import requests
 from urllib.parse import urljoin
 from credential_manager import credential_manager as credentials
+from datetime import datetime
 
 CMS_JSON_URL = "https://clientes.tecnoactive.cl/cms_content/json/json_contenidos.php?pantalla_id="
 base_folder = "cms"
 os.makedirs(base_folder, exist_ok=True)
+
+# archivo .log para guardar los errores
+log_file = os.path.join(base_folder, "cms_sync.log")
+
+def log_data(message):
+    """
+    Logs a message to the log file.
+    :param message: The message to log.
+    """
+    try:
+        # Verifica si el archivo de log existe y tiene permisos de escritura
+        if not os.path.exists(log_file) or not os.access(log_file, os.W_OK):
+            raise PermissionError(f"Log file {log_file} is not writable.")
+        with open(log_file, "a") as log:
+            log.write(f"{message}\n")
+    except Exception as e:
+        print(f"Error writing to log file: {e}")
+        # Si no se puede escribir en el archivo de log, imprime el error en la consola
+        print(message)
+
 
 def get_gpio(sensor_value):
     sensors = [
@@ -78,7 +99,6 @@ def assign_label(sensor_id: int, label: str):
     except Exception as e:
         print(f"Unexpected error: {e}")
         return {'error': f'Unexpected error: {str(e)}'}
-import requests
 
 def move_new_background(video_id, direction):
     """
@@ -112,14 +132,17 @@ def download_file(url, dest_path):
     """Descarga un archivo desde una URL y lo guarda en dest_path."""
     try:
         print('download_file '+url+' '+dest_path)
+        log_data(f"Descargando... {url} -> {dest_path}")
         response = requests.get(url, stream=True)
         response.raise_for_status()
         with open(dest_path, 'wb') as file:
             for chunk in response.iter_content(chunk_size=8192):
                 file.write(chunk)
         print(f"Descargado: {url} -> {dest_path}")
+        log_data(f"Descargado: {url} -> {dest_path}")
     except Exception as e:
         print(f"Error descargando {url}: {e}")
+        log_data(f"Error descargando {url}: {e}")
 
 def process_url(url):
     """
@@ -133,6 +156,9 @@ def process_url(url):
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
+
+        log_data(f"Procesando {url}")
+        log_data(f"Contenido: {data}")
 
         expected_files = []
         playlist = data.get("Playlist", [])
@@ -159,11 +185,15 @@ def process_url(url):
                 print(f"Eliminado archivo no esperado: {file}")
 
     except Exception as e:
+        log_data(f"Error procesando {url}: {e}")
         print(f"Error procesando {url}: {e}")
 
 def get_media():
     print('** get media')
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_data(f"********* get media ({fecha}) *********")
     CREDENTIALS = credentials.get_credentials()
+    log_data(f"Credentials: {str(CREDENTIALS)}")
     sensors_ids = generate_sensors_id(CREDENTIALS['device_id'])
     for sensor_id in sensors_ids:
         url = CMS_JSON_URL + sensor_id
