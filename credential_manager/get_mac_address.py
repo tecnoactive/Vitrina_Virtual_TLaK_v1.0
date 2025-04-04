@@ -4,7 +4,7 @@ import subprocess
 def get_mac_address():
     try:
         # Ejecutar ifconfig y capturar la salida
-        result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+        result = subprocess.run(['/usr/sbin/ifconfig'], capture_output=True, text=True)
         output = result.stdout
 
         # Buscar la sección de wlan0
@@ -13,7 +13,7 @@ def get_mac_address():
             return match.group(1)  # Retorna la MAC de wlan0
 
         # Si no se encuentra en ifconfig, probar con 'ip link'
-        result = subprocess.run(['ip', 'link'], capture_output=True, text=True)
+        result = subprocess.run(['/usr/sbin/ip', '/usr/bin/link'], capture_output=True, text=True)
         output = result.stdout
         match = re.search(r'wlan0.*?link/ether ([0-9a-fA-F:]{17})', output)
         if match:
