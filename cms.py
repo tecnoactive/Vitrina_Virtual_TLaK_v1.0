@@ -9,22 +9,27 @@ base_folder = "cms"
 os.makedirs(base_folder, exist_ok=True)
 
 # archivo .log para guardar los errores
-log_file = os.path.join("cms_sync.log")
+log_file = os.path.join(os.path.dirname(__file__), "cms_sync.log")
 
 def log_data(message):
     """
     Logs a message to the log file.
-    :param message: The message to log.
+    Creates the file if it doesn't exist.
     """
     try:
-        # Verifica si el archivo de log existe y tiene permisos de escritura
-        if not os.path.exists(log_file) or not os.access(log_file, os.W_OK):
+        # Crear el archivo si no existe
+        if not os.path.exists(log_file):
+            with open(log_file, 'w') as f:
+                f.write("")  # crea el archivo vacío
+
+        # Verifica si el archivo tiene permisos de escritura
+        if not os.access(log_file, os.W_OK):
             raise PermissionError(f"Log file {log_file} is not writable.")
+
         with open(log_file, "a") as log:
             log.write(f"{message}\n")
     except Exception as e:
         print(f"Error writing to log file: {e}")
-        # Si no se puede escribir en el archivo de log, imprime el error en la consola
         print(message)
 
 
